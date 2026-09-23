@@ -20,9 +20,10 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     ["Overview",`/cases/${id}`],
     ["Timeline",`/cases/${id}/timeline`],
     ["Graph",`/cases/${id}/graph`],
-    ["Media","#"],
+    ["Media",`/cases/${id}/media`],
     ["Finance","#"],
     ["Sources",`/cases/${id}/sources`],
+    ["Evidence",`/cases/${id}/evidence`],
     ["AI Analyst","#"],
   ];
 
