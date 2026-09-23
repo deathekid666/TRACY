@@ -19,7 +19,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const tabs=[
     ["Overview",`/cases/${id}`],
     ["Timeline",`/cases/${id}/timeline`],
-    ["Graph","#"],
+    ["Graph",`/cases/${id}/graph`],
     ["Media","#"],
     ["Finance","#"],
     ["Sources",`/cases/${id}/sources`],
