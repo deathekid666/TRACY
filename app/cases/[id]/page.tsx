@@ -21,10 +21,10 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     ["Timeline",`/cases/${id}/timeline`],
     ["Graph",`/cases/${id}/graph`],
     ["Media",`/cases/${id}/media`],
-    ["Finance","#"],
+    ["Finance",`/cases/${id}/finance`],
     ["Sources",`/cases/${id}/sources`],
     ["Evidence",`/cases/${id}/evidence`],
-    ["AI Analyst","#"],
+    ["AI Analyst",`/cases/${id}/analyst`],
   ];
 
   return <main className="min-h-screen p-6 md:p-10"><div className="mx-auto max-w-7xl">
