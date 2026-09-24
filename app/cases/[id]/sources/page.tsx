@@ -43,7 +43,7 @@ export default async function Sources({params}:{params:Promise<{id:string}>}){
           <Link href={`/cases/${id}`} className="text-sm text-slate-400 hover:text-white">← {c.title}</Link>
           <p className="mt-6 text-xs font-semibold tracking-[.3em] text-cyan-300">EVIDENCE LIBRARY</p>
           <h1 className="mt-2 text-3xl font-semibold">Sources</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Relevant evidence is shown first. Weak or unrelated results remain available under Filtered noise and All raw sources for auditability.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Every gathered source is displayed by default. TRACY labels each item as relevant, candidate/review, duplicate or low-confidence noise so filtering never makes a finding disappear.</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-right">
           <div className="text-2xl font-semibold">{items.length}</div>
