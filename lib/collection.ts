@@ -264,12 +264,12 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
     if(exists){skipped++;return}
     const source=await db.source.create({data:{
       caseId,url:result.url,title:result.title,provider:result.provider,
-      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
+      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:result.publishedAt,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
     }});
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
       observedAt:result.observedAt?new Date(result.observedAt):new Date(),
-      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,identityScore:result.score,classification:result.classification,reasons:result.reasons}
+      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,publishedAt:result.publishedAt,identityScore:result.score,classification:result.classification,reasons:result.reasons}
     }});
     if(content){
       await db.evidence.create({data:{
