@@ -14,6 +14,12 @@ function fallbackQuery(value:string){
     .trim();
 }
 
+function parsePublished(value?:string){
+  if(!value)return undefined;
+  const d=new Date(value);
+  return Number.isNaN(d.getTime())?undefined:d.toISOString();
+}
+
 function sleep(ms:number){
   return new Promise(resolve=>setTimeout(resolve,ms));
 }
@@ -57,7 +63,8 @@ export class SerperWebConnector implements PublicConnector{
             title:item.title!,
             url:item.link!,
             snippet:[item.publicationInfo,item.snippet].filter(Boolean).join(" — "),
-            observedAt:new Date().toISOString()
+            observedAt:new Date().toISOString(),
+            publishedAt:parsePublished(item.date)||(item.year?new Date(Date.UTC(item.year,0,1)).toISOString():undefined)
           }));
         }
 
