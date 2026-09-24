@@ -8,9 +8,9 @@ import { getPublicPivots } from "@/lib/public-pivots";
 import { fetchPublicPage } from "@/lib/public-page";
 
 const connector=new SerperWebConnector();
-const MAX_INITIAL_SEARCHES=8;
+const MAX_INITIAL_SEARCHES=12;
 const MAX_RECURSIVE_SEARCHES=4;
-const MAX_SERPER_CALLS=20;
+const MAX_SERPER_CALLS=18;
 const MAX_DEEP_DOCUMENT_CHECKS=18;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
@@ -64,9 +64,32 @@ function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.
 type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string;page:number};
 
 function pagesForQuery(query:string,index:number){
-  if(index<2)return [1,2];
-  if(/universit|facult|fsjes|fsjp|encg|est|pdf|liste|resultat|inscription|concours|memoire|soutenance/i.test(query))return [1,2,3];
-  return [1,2];
+  if(index<4)return [1,2];
+  return [1];
+}
+
+async function runScholarQueries(original:string){
+  const names=[original,reversedQuery(original)];
+  const batches=await Promise.all(names.map(async discoveryQuery=>{
+    try{
+      const results=await connector.searchScholar(discoveryQuery,1);
+      return results.map(result=>{
+        const scored=scoreResult(original,result);
+        const identityVisible=hasIdentityEvidence(original,result);
+        if(identityVisible){
+          scored.score=Math.min(100,scored.score+28);
+          scored.reasons.push("Google Scholar author/publication signal");
+        }else{
+          scored.score=0;
+          scored.reasons.push("rejected: no identity evidence in Scholar result");
+        }
+        return {...result,...scored,classification:classify(scored.score),discoveryQuery:"SCHOLAR "+discoveryQuery,page:1} as Ranked;
+      });
+    }catch{
+      return [] as Ranked[];
+    }
+  }));
+  return batches.flat();
 }
 
 async function runQueries(original:string,queries:string[],deep=true){
@@ -155,7 +178,8 @@ export async function collectPublicSources(caseId:string,query:string){
   const plan=buildSearchPlan(query);
   const initialQueries=plan.queries.slice(0,MAX_INITIAL_SEARCHES);
   const firstRun=await runQueries(query,initialQueries,true);
-  const first=await preserve(caseId,query,firstRun.results);
+  const scholarResults=plan.kind==="PERSON"?await runScholarQueries(query):[];
+  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults]);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
@@ -185,8 +209,8 @@ export async function collectPublicSources(caseId:string,query:string){
     caseId,title:"Deep public-footprint discovery",
     description:`Used ${serperCalls} paginated public-web searches; preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,scholarResultCount:scholarResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,scholarResultCount:scholarResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
