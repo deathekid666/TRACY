@@ -10,14 +10,19 @@ export function detectSearchKind(input:string):SearchPlan["kind"]{
  if(v.split(/\s+/).length>=2)return "PERSON";
  return "GENERAL";
 }
-function nameVariants(q:string){
- const parts=q.trim().split(/\s+/).filter(Boolean);
- if(parts.length<2)return [q];
- return unique([q,[...parts].reverse().join(" "),q.toUpperCase(),[...parts].reverse().join(" ").toUpperCase()]);
-}
+function variants(q:string){const p=q.trim().split(/\s+/).filter(Boolean);return p.length>=2?unique([q,[...p].reverse().join(" ")]):[q]}
 export function buildSearchPlan(input:string):SearchPlan{
  const q=input.trim(),kind=detectSearchKind(q);
- if(kind!=="PERSON")return {kind,queries:unique([q,q+" profile",q+" document PDF",q+" contact"])};
- const names=nameVariants(q),a=names[0],b=names[1]||a;
- return {kind,queries:unique([a,b,a+" PDF document",b+" PDF document",a+" inscription liste resultat etudiant universite faculte",b+" inscription liste resultat etudiant universite faculte",a+" FSJES FSJP universite",a+" CV resume conference publication"])};
+ if(kind!=="PERSON")return {kind,queries:unique([q,q+" profile",q+" document",q+" contact"])};
+ const v=variants(q),a=v[0],b=v[1]||a;
+ return {kind,queries:unique([
+  a,
+  b,
+  a+" universite faculte etudiant liste resultat inscription",
+  b+" universite faculte etudiant liste resultat inscription",
+  a+" FSJES FSJP ENCG EST faculte",
+  b+" FSJES FSJP ENCG EST faculte",
+  a+" CV rapport memoire soutenance conference",
+  b+" PDF liste etudiants resultats concours"
+ ])};
 }
