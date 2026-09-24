@@ -70,7 +70,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const visibleSources=investigation.sources.filter(s=>decision(s)!=="REJECT");
   const relevantSources=visibleSources.filter(s=>decision(s)==="KEEP");
   const reviewSources=visibleSources.filter(s=>decision(s)!=="KEEP");
-  const rejectedCount=investigation.sources.filter(s=>decision(s)==="REJECT").length;
+  const rejectedSources=investigation.sources.filter(s=>decision(s)==="REJECT");
+  const rejectedCount=rejectedSources.length;
 
   const accounts=visibleSources.filter(s=>sourceCategory(s)==="PUBLIC_ACCOUNT");
   const documents=visibleSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
@@ -87,7 +88,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const mode=text(discoveryMeta.mode)||"unknown";
 
   const tabs=[
-    ["Dossier",`/cases/${id}`],["Timeline",`/cases/${id}/timeline`],["Graph",`/cases/${id}/graph`],
+    ["Dossier",`/cases/${id}`],["Report",`/cases/${id}/report`],["Timeline",`/cases/${id}/timeline`],["Graph",`/cases/${id}/graph`],
     ["Media",`/cases/${id}/media`],["Sources",`/cases/${id}/sources`],["Evidence",`/cases/${id}/evidence`],
     ["AI Analyst",`/cases/${id}/analyst`],
   ];
@@ -190,6 +191,12 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
               <div className="mt-4 space-y-3">{otherFacts.length?otherFacts.slice(0,10).map((fact,i)=><div key={i} className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="flex items-center justify-between gap-3"><span className="text-[10px] font-semibold uppercase tracking-[.16em] text-violet-300">{fact.type.replaceAll("_"," ")}</span><span className="text-[10px] text-slate-600">{fact.confidence}%</span></div><div className="mt-2 text-sm">{fact.value}</div></div>):<p className="text-sm leading-6 text-slate-500">No additional structured facts have been established yet. When AI curation is configured, supported facts are extracted from retained evidence rather than guessed.</p>}</div>
             </section>
           </section>
+
+          {(reviewSources.length>0||rejectedSources.length>0)&&<section className="rounded-2xl border border-amber-400/15 bg-slate-950/55 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><Database className="h-4 w-4 text-amber-300"/><h2 className="font-medium">Gathered candidates & low-confidence findings</h2></div><p className="mt-1 text-xs text-slate-500">These are displayed instead of hidden. They are not treated as confirmed facts until stronger identity evidence is found.</p></div><Link href={`/cases/${id}/report`} className="text-xs text-cyan-300">Open full report →</Link></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">{[...reviewSources,...rejectedSources].slice(0,12).map(s=>{const d=decision(s);const m=meta(s.metadata);return <a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 hover:border-amber-400/20"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="line-clamp-2 text-sm">{s.title||s.url}</div><div className="mt-1 text-[10px] text-slate-600">{s.provider||"SOURCE"} · {sourceCategory(s).replaceAll("_"," ")}</div></div><span className={"shrink-0 rounded-full border px-2 py-1 text-[9px] uppercase tracking-wider "+(d==="REVIEW"||d==="UNREVIEWED"?"border-amber-500/30 text-amber-300":"border-slate-700 text-slate-500")}>{d}</span></div>{text(m.curatedReason)&&<div className="mt-2 line-clamp-2 text-[10px] text-slate-500">{text(m.curatedReason)}</div>}</a>})}</div>
+            {[...reviewSources,...rejectedSources].length>12&&<div className="mt-4 text-xs text-slate-500">+ {[...reviewSources,...rejectedSources].length-12} more gathered findings in the full report and source library.</div>}
+          </section>}
 
           <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-cyan-300"/><h2 className="font-medium">Source chronology</h2></div><p className="mt-1 text-xs text-slate-500">Original publication/release dates when the source exposes them; TRACY collection time stays separate.</p></div><Link href={`/cases/${id}/timeline`} className="text-xs text-cyan-300">Full timeline →</Link></div>
