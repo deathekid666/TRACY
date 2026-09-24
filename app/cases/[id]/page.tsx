@@ -17,7 +17,6 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
       sources: { orderBy: { collectedAt: "desc" }, take: 5 },
       evidence: { orderBy: { collectedAt: "desc" }, take: 5 },
       events: { orderBy: { occurredAt: "desc" }, take: 5 },
-      relationships: { take: 5 },
       _count: { select: { entities:true, sources:true, evidence:true, events:true, relations:true, transactions:true } }
     },
   });
