@@ -33,6 +33,68 @@ function textFromHtml(html:string){
     .trim()).slice(0,180_000);
 }
 
+function attr(tag:string,name:string){
+  const m=tag.match(new RegExp(name+"\\s*=\\s*([\"'])(.*?)\\1","i"));
+  return m?.[2]?.trim()||"";
+}
+
+function absoluteUrl(value:string,base:string){
+  try{return new URL(decodeHtml(value),base).toString()}catch{return ""}
+}
+
+function parseDate(value:string|undefined|null){
+  if(!value)return undefined;
+  const clean=value.trim();
+  const pdf=clean.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/);
+  if(pdf){
+    const [,y,m,d,hh="00",mm="00",ss="00"]=pdf;
+    const iso=`${y}-${m}-${d}T${hh}:${mm}:${ss}Z`;
+    const dt=new Date(iso);
+    return Number.isNaN(dt.getTime())?undefined:dt.toISOString();
+  }
+  const dt=new Date(clean);
+  return Number.isNaN(dt.getTime())?undefined:dt.toISOString();
+}
+
+function htmlMetadata(html:string,baseUrl:string){
+  let publishedAt: string|undefined;
+  let modifiedAt: string|undefined;
+  let imageUrl: string|undefined;
+
+  const tags=html.match(/<meta\b[^>]*>/gi)??[];
+  for(const tag of tags){
+    const key=(attr(tag,"property")||attr(tag,"name")||attr(tag,"itemprop")).toLowerCase();
+    const content=attr(tag,"content");
+    if(!content)continue;
+
+    if(!publishedAt&&[
+      "article:published_time","og:published_time","datepublished","date","publishdate","pubdate","parsely-pub-date"
+    ].includes(key)) publishedAt=parseDate(content);
+
+    if(!modifiedAt&&[
+      "article:modified_time","og:updated_time","datemodified","last-modified","lastmodified"
+    ].includes(key)) modifiedAt=parseDate(content);
+
+    if(!imageUrl&&[
+      "og:image","og:image:url","twitter:image","twitter:image:src","image"
+    ].includes(key)){
+      const resolved=absoluteUrl(content,baseUrl);
+      if(resolved&&isPublicHttpUrl(resolved))imageUrl=resolved;
+    }
+  }
+
+  if(!publishedAt){
+    const timeTags=html.match(/<time\b[^>]*>/gi)??[];
+    for(const tag of timeTags){
+      const datetime=attr(tag,"datetime");
+      const parsed=parseDate(datetime);
+      if(parsed){publishedAt=parsed;break}
+    }
+  }
+
+  return {publishedAt,modifiedAt,imageUrl};
+}
+
 async function readLimited(response:Response,maxBytes:number){
   const reader=response.body?.getReader();if(!reader)return null;
   let received=0;const chunks:Uint8Array[]=[];
@@ -55,6 +117,9 @@ export type PageSnapshot={
   text:string;
   sha256:string;
   collectedAt:string;
+  publishedAt?:string;
+  modifiedAt?:string;
+  imageUrl?:string;
   fetchMode?:"direct"|"reader-fallback";
 };
 
@@ -75,8 +140,13 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
     if(!response.ok)return null;
     const bytes=await readLimited(response,MAX_READER_BYTES);
     if(!bytes||!bytes.length)return null;
-    const text=bytes.toString("utf8").replace(/\s+/g," ").trim().slice(0,240_000);
+    const raw=bytes.toString("utf8");
+    const text=raw.replace(/\s+/g," ").trim().slice(0,240_000);
     if(!text)return null;
+
+    const imageMatch=raw.match(/(?:^|\n)Image:\s*(https?:\/\/\S+)/i);
+    const publishedMatch=raw.match(/(?:^|\n)(?:Published Time|Published|Date):\s*([^\n]+)/i);
+
     return {
       url,
       finalUrl:url,
@@ -85,6 +155,8 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
       text,
       sha256:createHash("sha256").update(bytes).digest("hex"),
       collectedAt:new Date().toISOString(),
+      publishedAt:parseDate(publishedMatch?.[1]),
+      imageUrl:imageMatch?.[1]&&isPublicHttpUrl(imageMatch[1])?imageMatch[1]:undefined,
       fetchMode:"reader-fallback"
     };
   }catch{
@@ -111,17 +183,30 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
     if(!bytes||!bytes.length)return fetchReaderFallback(url);
 
     let text="";
+    let publishedAt: string|undefined;
+    let modifiedAt=parseDate(response.headers.get("last-modified"));
+    let imageUrl: string|undefined;
+
     if(looksPdf){
       try{
         const pdfParse=(await import("pdf-parse")).default;
         const parsed=await pdfParse(bytes);
         text=(parsed.text||"").replace(/\s+/g," ").trim().slice(0,220_000);
+        const info=(parsed.info??{}) as Record<string,unknown>;
+        publishedAt=parseDate(typeof info.CreationDate==="string"?info.CreationDate:undefined);
+        modifiedAt=parseDate(typeof info.ModDate==="string"?info.ModDate:undefined)||modifiedAt;
       }catch{
         return fetchReaderFallback(url);
       }
     }else{
-      text=textFromHtml(bytes.toString("utf8"));
+      const html=bytes.toString("utf8");
+      text=textFromHtml(html);
+      const metadata=htmlMetadata(html,finalUrl);
+      publishedAt=metadata.publishedAt;
+      modifiedAt=metadata.modifiedAt||modifiedAt;
+      imageUrl=metadata.imageUrl;
     }
+
     if(!text)return fetchReaderFallback(url);
 
     return {
@@ -132,6 +217,9 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
       text,
       sha256:createHash("sha256").update(bytes).digest("hex"),
       collectedAt:new Date().toISOString(),
+      publishedAt,
+      modifiedAt,
+      imageUrl,
       fetchMode:"direct"
     };
   }catch{
