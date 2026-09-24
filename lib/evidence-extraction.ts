@@ -96,7 +96,10 @@ export async function extractEvidenceEntities(caseId:string){
       }
 
       if(user&&/^[a-z0-9._-]{3,32}$/i.test(user)){
-        found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
+        const handleIsContextual=sourceTitleMatchesIdentity||nearIdentity(text,user,query,320);
+        if(handleIsContextual){
+          found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
+        }
       }
     }catch{}
 
