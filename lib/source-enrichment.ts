@@ -9,7 +9,7 @@ function classification(source:{metadata:unknown}){
   return String(metadata.classification??"");
 }
 
-export async function enrichPublicSources(caseId:string,sourceIds:string[]){
+export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPages=MAX_PAGES){
   const candidateIds=sourceIds.slice(0,MAX_CANDIDATES);
   const sources=await db.source.findMany({where:{caseId,id:{in:candidateIds}}});
   const order=new Map(sourceIds.map((id,index)=>[id,index]));
@@ -17,7 +17,7 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[]){
     const ac=classification(a)==="CANDIDATE"?0:1;
     const bc=classification(b)==="CANDIDATE"?0:1;
     return ac-bc+(order.get(a.id)!-order.get(b.id)!)/10000;
-  }).slice(0,MAX_PAGES);
+  }).slice(0,Math.max(0,Math.min(MAX_PAGES,maxPages)));
 
   const outcomes=await Promise.all(prioritized.map(async source=>{
     const page=await fetchPublicPage(source.url);
