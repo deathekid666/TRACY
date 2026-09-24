@@ -38,7 +38,6 @@ function genericNoise(text:string,url:string){
 function categoryFrom(source:{url:string;title:string|null;metadata:unknown}){
   const m=(source.metadata??{}) as Record<string,unknown>;
   const existing=String(m.category??"");
-  if(existing&&existing!=="GENERAL")return existing;
   const s=((source.title??"")+" "+source.url).toLowerCase();
   if(/linkedin|zoominfo|company|employer|career|job/.test(s))return "PROFESSIONAL";
   if(/universit|faculty|fsjes|student|school|academic|scribd|\.ac\.|\.edu/.test(s))return "EDUCATION";
@@ -70,10 +69,10 @@ async function aiReview(
     "Use only the supplied source title, URL and snippet. Do not infer facts that are not explicitly supported.",
     "Reject generic help pages, unrelated corporate pages, generic forum pages, shopping pages, and keyword collisions.",
     "A matching name or a trusted handle can support relevance, but handle-only matches should remain cautious.",
-    "Extract useful public facts only when explicit: birth date, aliases, education, employment, public location, nationality, languages, public accounts, public professional facts.",
+    "Extract useful public facts only when explicit: birth date, age, birthplace, aliases, education, qualifications, employment, role/title, organization, public location, nationality, languages, websites, usernames, account join dates, publications and public professional facts.",
     "Do not extract medical information, government ID/passport data, passwords, private financial data or other private credentials.",
     "Return JSON only with this shape:",
-    '{"decisions":[{"sourceId":"...","decision":"KEEP|REVIEW|REJECT","category":"...","summary":"...","confidence":0}],"facts":[{"type":"BIRTH_DATE|ALIAS|EDUCATION|EMPLOYMENT|LOCATION|NATIONALITY|LANGUAGE|OTHER","value":"...","confidence":0,"sourceIds":["..."]}]}',
+    '{"decisions":[{"sourceId":"...","decision":"KEEP|REVIEW|REJECT","category":"...","summary":"...","confidence":0}],"facts":[{"type":"BIRTH_DATE|AGE|BIRTH_PLACE|ALIAS|EDUCATION|QUALIFICATION|EMPLOYMENT|ROLE|ORGANIZATION|LOCATION|NATIONALITY|LANGUAGE|WEBSITE|USERNAME|ACCOUNT_JOIN_DATE|PUBLICATION|OTHER","value":"...","confidence":0,"sourceIds":["..."]}]}',
     "Person: "+personName,
     "Sources:",
     JSON.stringify(candidates)
