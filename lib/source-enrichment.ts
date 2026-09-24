@@ -25,7 +25,7 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[]){
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:`Public page capture: ${source.title||page.finalUrl}`,content:page.text,
       sha256:page.sha256,observedAt:new Date(page.collectedAt),
-      metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType}
+      metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType,fetchMode:page.fetchMode??"direct"}
     }});
     return true;
   }));
