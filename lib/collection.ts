@@ -31,7 +31,9 @@ export async function collectPublicSources(caseId:string,query:string){
   const queries=await buildQueries(caseId,query);
   const tasks=queries.flatMap(q=>connectors.map(async connector=>({query:q,connector:connector.id,results:await connector.search(q)})));
   const batches=await Promise.allSettled(tasks);
-  const completed=batches.filter((b):b is PromiseFulfilledResult<{query:string;connector:string;results:any[]}>>=>b.status==="fulfilled").map(b=>b.value);
+  const completed=batches.flatMap(batch =>
+    batch.status === "fulfilled" ? [batch.value] : []
+  );
   const raw=completed.flatMap(b=>b.results.map(result=>({...result,discoveryQuery:b.query,discoveryConnector:b.connector})));
   const results=[...new Map(raw.map(r=>[r.url,r])).values()];
   let added=0,skipped=0;
