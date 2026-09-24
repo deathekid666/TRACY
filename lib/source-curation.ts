@@ -164,7 +164,7 @@ export async function curateSources(caseId:string){
   const aiById=new Map(ai.decisions.map(d=>[d.sourceId,d]));
 
   let kept=0,review=0,rejected=0;
-  for(const source of investigation.sources){
+  const updates=investigation.sources.map(source=>{
     const pre=preliminary.get(source.id)!;
     const aiDecision=aiById.get(source.id);
     const decision=aiDecision?.decision??pre.decision;
@@ -173,7 +173,7 @@ export async function curateSources(caseId:string){
     else rejected++;
 
     const current=(source.metadata??{}) as Record<string,unknown>;
-    await db.source.update({
+    return db.source.update({
       where:{id:source.id},
       data:{metadata:{
         ...current,
@@ -184,6 +184,10 @@ export async function curateSources(caseId:string){
         aiCurated:Boolean(aiDecision)
       }}
     });
+  });
+
+  for(let i=0;i<updates.length;i+=25){
+    await Promise.all(updates.slice(i,i+25));
   }
 
   await db.event.create({data:{
