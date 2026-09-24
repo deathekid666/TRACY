@@ -29,7 +29,9 @@ export class InternetArchiveConnector implements PublicConnector{
       if(!doc.identifier)return [];
       const title=doc.title||doc.identifier;
       const snippet=[join(doc.creator),join(doc.description),doc.date,doc.mediatype].filter(Boolean).join(" — ").slice(0,1200);
-      return [{provider:"Internet Archive",title,url:"https://archive.org/details/"+doc.identifier,snippet,observedAt:new Date().toISOString()}];
+      const parsed=doc.date?new Date(doc.date):null;
+      const publishedAt=parsed&&!Number.isNaN(parsed.getTime())?parsed.toISOString():undefined;
+      return [{provider:"Internet Archive",title,url:"https://archive.org/details/"+doc.identifier,snippet,observedAt:new Date().toISOString(),publishedAt}];
     });
   }
 }
