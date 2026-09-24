@@ -24,6 +24,22 @@ export class DuckDuckGoHtmlConnector implements PublicConnector {
   }
 }
 
+export class BingRssConnector implements PublicConnector {
+  id="bing-rss"; label="Bing Web";
+  async search(query:string):Promise<CollectedResult[]>{
+    try{
+      const endpoint=`https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss&mkt=en-US&setlang=en-US`;
+      const response=await fetch(endpoint,{headers:{"User-Agent":"Mozilla/5.0 (compatible; TRACY/0.1; public research)","Accept":"application/rss+xml,application/xml,text/xml"},cache:"no-store",redirect:"follow"});
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const xml=await response.text();
+      return [...xml.matchAll(/<item>([\\s\\S]*?)<\\/item>/gi)].slice(0,12).map(match=>{
+        const block=match[1]; const published=tag(block,"pubDate");
+        return {provider:"Bing",title:tag(block,"title"),url:tag(block,"link"),snippet:tag(block,"description"),observedAt:published?new Date(published).toISOString():undefined};
+      }).filter(x=>x.url&&x.title);
+    }catch(error){console.error("[TRACY connector] Bing RSS failed",error);return []}
+  }
+}
+
 export class WikipediaConnector implements PublicConnector {
   id="wikipedia"; label="Wikipedia";
   async search(query:string):Promise<CollectedResult[]>{
