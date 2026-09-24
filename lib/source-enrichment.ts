@@ -23,16 +23,17 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPa
     const page=await fetchPublicPage(source.url);
     if(!page)return false;
     const currentMeta=(source.metadata??{}) as Record<string,unknown>;
+    const nextMeta={
+      ...currentMeta,
+      publishedAt:page.publishedAt??(typeof currentMeta.publishedAt==="string"?currentMeta.publishedAt:undefined),
+      modifiedAt:page.modifiedAt??(typeof currentMeta.modifiedAt==="string"?currentMeta.modifiedAt:undefined),
+      imageUrl:page.imageUrl??(typeof currentMeta.imageUrl==="string"?currentMeta.imageUrl:undefined),
+      finalUrl:page.finalUrl,
+      fetchMode:page.fetchMode??"direct"
+    };
     await db.source.update({
       where:{id:source.id},
-      data:{metadata:{
-        ...currentMeta,
-        publishedAt:page.publishedAt??currentMeta.publishedAt,
-        modifiedAt:page.modifiedAt??currentMeta.modifiedAt,
-        imageUrl:page.imageUrl??currentMeta.imageUrl,
-        finalUrl:page.finalUrl,
-        fetchMode:page.fetchMode??"direct"
-      }}
+      data:{metadata:nextMeta as any}
     });
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:`Public page capture: ${source.title||page.finalUrl}`,content:page.text,
