@@ -7,7 +7,7 @@ import { buildSearchPlan } from "@/lib/search-planner";
 import { getPublicPivots } from "@/lib/public-pivots";
 
 const connector=new SerperWebConnector();
-const MAX_INITIAL_SEARCHES=7;
+const MAX_INITIAL_SEARCHES=8;
 const MAX_RECURSIVE_SEARCHES=5;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
@@ -31,6 +31,7 @@ function scoreResult(query:string,result:CollectedResult){
   return {score:Math.min(score,100),reasons};
 }
 function classify(score:number){return score>=70?"STRONG":score>=45?"POSSIBLE":"NOISE"}
+function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|universit|facult|fsjes|fsjp|cv|resume/.test(s)}
 
 type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string};
 
@@ -39,6 +40,7 @@ async function runQueries(original:string,queries:string[]){
     const results=await connector.search(discoveryQuery);
     return results.map(result=>{
       const scored=scoreResult(original,result);
+      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+15);scored.reasons.push("document/academic signal")}
       return {...result,...scored,classification:classify(scored.score),discoveryQuery} as Ranked;
     });
   }));
