@@ -254,7 +254,7 @@ async function runQueries(original:string,queries:string[],deep=true){
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
 }
 
-async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true,maxDeepChecks=MAX_DEEP_DOCUMENT_CHECKS){
+async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true,maxDeepChecks=MAX_DEEP_DOCUMENT_CHECKS,retainUnverifiedCandidates=false){
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
@@ -294,7 +294,17 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 
   for(const checked of checks){
     if(checked.exists){skipped++;continue}
-    if(!checked.page||!identityInText(checked.page.text,original)){deepRejected++;noise++;continue}
+    if(!checked.page||!identityInText(checked.page.text,original)){
+      deepRejected++;
+      noise++;
+      if(retainUnverifiedCandidates){
+        checked.result.score=Math.max(20,checked.result.score);
+        checked.result.classification="CANDIDATE";
+        checked.result.reasons=[...checked.result.reasons.filter(r=>!r.startsWith("rejected:")),"academic/document candidate from an exact-name search; identity not yet verified inside fetched content"];
+        await saveResult(checked.result);
+      }
+      continue
+    }
     checked.result.score=Math.max(65,checked.result.score);
     checked.result.classification="POSSIBLE";
     checked.result.reasons=[...checked.result.reasons.filter(r=>!r.startsWith("rejected:")),"identity found inside fetched public document/page"];
@@ -309,7 +319,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 
 export async function collectPublicSources(caseId:string,query:string,mode:"quick"|"deep"="deep"){
   const stale=await db.source.findMany({where:{caseId,provider:{startsWith:"Google / Serper"}},select:{id:true,metadata:true}});
-  const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"||m.classification==="CANDIDATE"}).map(s=>s.id);
+  const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"}).map(s=>s.id);
   if(staleIds.length){await db.evidence.deleteMany({where:{sourceId:{in:staleIds}}});await db.source.deleteMany({where:{id:{in:staleIds}}});}
   const plan=buildSearchPlan(query);
   const initialLimit=mode==="quick"?8:MAX_INITIAL_SEARCHES;
@@ -317,10 +327,10 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const firstRun=await runQueries(query,initialQueries,mode==="deep");
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
-  const academicQueries=plan.kind==="PERSON"?buildAcademicQueries(query).slice(0,mode==="quick"?5:16):[];
+  const academicQueries=plan.kind==="PERSON"?buildAcademicQueries(query).slice(0,mode==="quick"?8:18):[];
   const academicRun=academicQueries.length?await runQueries(query,academicQueries,false):{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
   const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
-  const academic=await preserve(caseId,query,academicRun.results,true,mode==="quick"?6:MAX_DEEP_DOCUMENT_CHECKS);
+  const academic=await preserve(caseId,query,academicRun.results,true,mode==="quick"?10:MAX_DEEP_DOCUMENT_CHECKS,true);
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
   const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
   const firstEnrichmentIds=[...new Set([...first.sourceIds,...academic.sourceIds,...staleEnrichmentIds])];
