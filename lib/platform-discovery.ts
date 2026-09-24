@@ -11,6 +11,8 @@ function clean(value:string){
 export function buildNamePlatformQueries(name:string):PlatformDiscoveryQuery[]{
   const n=name.trim();
   return [
+    {seed:n,platform:"Web-wide identity",query:'"'+n+'"'},
+    {seed:n,platform:"Web-wide old references",query:'"'+n+'" profile member forum archive'},
     {seed:n,platform:"Instagram",query:'site:instagram.com "'+n+'"'},
     {seed:n,platform:"Facebook",query:'site:facebook.com "'+n+'"'},
     {seed:n,platform:"Facebook old/public",query:'site:facebook.com/public "'+n+'"'},
@@ -30,6 +32,11 @@ export function buildUsernamePlatformQueries(username:string):PlatformDiscoveryQ
 
   return [
     {seed:u,platform:"Web-wide handle",query:'"'+u+'"'},
+    {seed:u,platform:"Web-wide profile",query:'"'+u+'" profile account member'},
+    {seed:u,platform:"Web-wide email",query:'"'+u+'" email contact'},
+    {seed:u,platform:"Web-wide phone",query:'"'+u+'" phone telephone contact'},
+    {seed:u,platform:"Web-wide archive",query:'"'+u+'" archive old cached'},
+    {seed:u,platform:"Web-wide documents",query:'"'+u+'" PDF document'},
     {seed:u,platform:"Forums",query:'"'+u+'" forum member profile'},
     {seed:u,platform:"Hypixel",query:'site:hypixel.net/members "'+u+'"'},
     {seed:u,platform:"Tumblr",query:'"'+u+'" tumblr'},
