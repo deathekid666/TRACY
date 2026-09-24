@@ -76,6 +76,8 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const accounts=c.sources.filter(s=>category(s)==="PUBLIC_ACCOUNT");
   const professional=c.sources.filter(s=>category(s)==="PROFESSIONAL");
   const documents=c.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(category(s)));
+  const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
+  const academicCandidates=documents.filter(s=>!academicRecordSourceIds.has(s.id));
   const relevant=c.sources.filter(s=>decision(s)==="KEEP");
   const candidates=c.sources.filter(s=>decision(s)==="REVIEW"||decision(s)==="UNREVIEWED");
   const lowConfidence=c.sources.filter(s=>decision(s)==="REJECT");
@@ -144,8 +146,8 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
       <section className="mt-6 rounded-3xl border border-cyan-400/15 bg-slate-950/60 p-6">
         <div className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-cyan-300"/><h2 className="text-lg font-medium">Education & academic report</h2></div>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {academicRecords.map((record,i)=><article key={record.sourceId+"-"+i} className="rounded-2xl border border-slate-800 bg-slate-900/35 p-4">
-            <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] uppercase tracking-[.16em] text-cyan-300">{record.institution||"Academic public record"}</div><div className="mt-2 text-sm font-medium">{record.sourceTitle}</div></div><span className="text-[10px] text-slate-600">{record.confidence}%</span></div>
+          {academicRecords.map((record,i)=><article key={record.sourceId+"-"+i} className="rounded-2xl border border-emerald-400/15 bg-slate-900/35 p-4">
+            <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] uppercase tracking-[.16em] text-emerald-300">{record.institution||"Academic public record"}</div><div className="mt-2 text-sm font-medium">{record.sourceTitle}</div></div><span className="text-[10px] text-slate-600">{record.confidence}%</span></div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {record.academicYear&&<Mini label="Academic year" value={record.academicYear}/>}
               {record.semester&&<Mini label="Semester" value={record.semester}/>}
@@ -156,7 +158,13 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
             </div>
             <a href={record.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs text-cyan-300">Supporting source <ExternalLink className="h-3 w-3"/></a>
           </article>)}
-          {!academicRecords.length&&<div className="rounded-2xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No structured academic record has been extracted yet. Academic candidate sources still appear in the source register below instead of being hidden.</div>}
+
+          {academicCandidates.map(source=>{const d=decision(source);const m=meta(source.metadata);return <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="rounded-2xl border border-amber-400/15 bg-amber-400/[.025] p-4 hover:border-amber-400/25">
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] uppercase tracking-[.16em] text-amber-300">Academic candidate</div><div className="mt-2 line-clamp-2 text-sm font-medium">{source.title||source.url}</div><div className="mt-1 text-[10px] text-slate-600">{source.provider||"SOURCE"} · {text(m.discoveryQuery)||"academic search"}</div></div><span className={"rounded-full border px-2 py-1 text-[9px] uppercase tracking-wider "+badge(d)}>{d}</span></div>
+            {text(m.curatedReason)&&<div className="mt-3 text-[10px] leading-5 text-slate-500">{text(m.curatedReason)}</div>}
+          </a>})}
+
+          {!academicRecords.length&&!academicCandidates.length&&<div className="rounded-2xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No academic source has been gathered yet.</div>}
         </div>
         {educationFacts.length>0&&<div className="mt-5 grid gap-3 md:grid-cols-2">{educationFacts.map((fact,i)=><FactCard key={i} fact={fact}/>)}</div>}
       </section>
