@@ -6,6 +6,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
   const {id}=await params;
   const body=await request.json();
   const query=String(body.query??"").trim();
+  const mode=body.mode==="quick"?"quick":"deep";
 
   if(!query){
     return NextResponse.json({error:"Search query is required"},{status:400});
@@ -17,14 +18,16 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
   }
 
   try{
-    const outcome=await collectPublicSources(id,query);
+    const outcome=await collectPublicSources(id,query,mode);
     return NextResponse.json({
       count:outcome.added,
       found:outcome.results.length,
       skipped:outcome.skipped,
       results:outcome.results,
       queries:outcome.queries,
-      filtered:outcome.noise
+      filtered:outcome.noise,
+      mode:outcome.mode,
+      curation:outcome.curation
     });
   }catch(error){
     console.error("Public discovery failed",error);
