@@ -14,6 +14,6 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
     return NextResponse.json({count:outcome.added,found:outcome.results.length,skipped:outcome.skipped,results:outcome.results});
   }catch(error){
     console.error("Public discovery failed",error);
-    return NextResponse.json({error:"Public discovery failed"},{status:500});
+    const message=error instanceof Error?error.message:"UNKNOWN_ERROR";\n    return NextResponse.json({error:"Public discovery failed",detail:message},{status:500});
   }
 }
