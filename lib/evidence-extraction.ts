@@ -80,8 +80,17 @@ export async function extractEvidenceEntities(caseId:string){
       const host=u.hostname.replace(/^www\./,"");
       const p=u.pathname.split("/").filter(Boolean);
       let user="";
+
       if(/linkedin\.com$/.test(host)&&p[0]==="in")user=p[1]||"";
-      else if(/facebook\.|instagram\.|pinterest\.|github\.|reddit\.|x\.com$|twitter\./.test(host))user=p[0]||"";
+      else if(/reddit\.com$/.test(host)&&p[0]==="user")user=p[1]||"";
+      else if(/snapchat\.com$/.test(host)&&p[0]==="add")user=p[1]||"";
+      else if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))user=(p[0]||"").replace(/^@/,"");
+      else if(/facebook\.|instagram\.|pinterest\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))user=p[0]||"";
+      else if(/\.tumblr\.com$/.test(host)){
+        const sub=host.split(".")[0];
+        if(sub&&sub!=="www")user=sub;
+      }
+
       if(user&&/^[a-z0-9._-]{3,32}$/i.test(user)){
         found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
       }
