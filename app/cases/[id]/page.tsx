@@ -9,6 +9,7 @@ import {
 import { db } from "@/lib/db";
 import { CollectSources } from "@/components/CollectSources";
 import { AutoQuickScan } from "@/components/AutoQuickScan";
+import { DISCOVERY_VERSION } from "@/lib/discovery-version";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const latestDiscovery=investigation.events.find(e=>e.title==="Deep public-footprint discovery");
   const discoveryMeta=meta(latestDiscovery?.metadata);
   const mode=text(discoveryMeta.mode)||"unknown";
+  const latestDiscoveryVersion=text(discoveryMeta.algorithmVersion);
+  const needsDiscoveryRefresh=latestDiscoveryVersion!==DISCOVERY_VERSION;
 
   const tabs=[
     ["Dossier",`/cases/${id}`],["Report",`/cases/${id}/report`],["Timeline",`/cases/${id}/timeline`],["Graph",`/cases/${id}/graph`],
@@ -133,7 +136,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <div className="border-t border-slate-800 bg-slate-950/75 p-6 lg:border-l lg:border-t-0 md:p-8">
             <div className="flex items-center justify-between"><div><div className="text-[10px] font-semibold tracking-[.22em] text-cyan-300">SCAN CONTROL</div><div className="mt-1 text-sm text-slate-400">Fast first, deep when needed.</div></div><Radar className="h-5 w-5 text-cyan-300"/></div>
-            <div className="mt-5"><CollectSources caseId={id} defaultQuery={defaultQuery}/><AutoQuickScan caseId={id} query={defaultQuery} enabled={investigation._count.sources===0}/></div>
+            <div className="mt-5"><CollectSources caseId={id} defaultQuery={defaultQuery}/><AutoQuickScan caseId={id} query={defaultQuery} enabled={investigation._count.sources===0||needsDiscoveryRefresh} version={DISCOVERY_VERSION}/>{needsDiscoveryRefresh&&investigation._count.sources>0&&<div className="mt-3 rounded-lg border border-amber-400/15 bg-amber-400/[.04] px-3 py-2 text-[11px] text-amber-200">This case was created with an older discovery engine. TRACY is refreshing it automatically with the current academic/contact/report pipeline.</div>}</div>
           </div>
         </div>
       </section>
