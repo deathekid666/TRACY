@@ -89,12 +89,12 @@ function pagesForQuery(query:string,index:number){
   return [1];
 }
 
-async function runPlatformDiscovery(original:string,usernames:string[]){
+async function runPlatformDiscovery(original:string,usernames:string[],includeName=true){
   const selected:PlatformDiscoveryQuery[]=[];
-  selected.push(...buildNamePlatformQueries(original).slice(0,8));
+  if(includeName)selected.push(...buildNamePlatformQueries(original));
 
   const perUsername=usernames.slice(0,4).map(username=>buildUsernamePlatformQueries(username));
-  for(let depth=0;depth<15&&selected.length<MAX_PLATFORM_CALLS;depth++){
+  for(let depth=0;depth<18&&selected.length<MAX_PLATFORM_CALLS;depth++){
     for(const list of perUsername){
       const item=list[depth];
       if(item)selected.push(item);
@@ -320,13 +320,28 @@ export async function collectPublicSources(caseId:string,query:string){
   const usernameEntities=await db.entity.findMany({
     where:{caseId,type:"USERNAME"},
     orderBy:{createdAt:"desc"},
-    take:8,
+    take:12,
     select:{canonical:true,label:true}
   });
   const usernameSeeds=[...new Set(usernameEntities.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
-  const platformRun=plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds):{results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
-  const platform=await preserve(caseId,query,platformRun.results.filter(r=>r.classification!=="NOISE"));
-  const platformExtraction=platform.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
+
+  const emptyPlatformRun={results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
+  const platformRun1=plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
+  const platform1=await preserve(caseId,query,platformRun1.results.filter(r=>r.classification!=="NOISE"));
+  const platformExtraction1=platform1.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
+
+  const usernameEntitiesAfterRound1=await db.entity.findMany({
+    where:{caseId,type:"USERNAME"},
+    orderBy:{createdAt:"desc"},
+    take:20,
+    select:{canonical:true,label:true}
+  });
+  const allUsernameSeedsAfterRound1=[...new Set(usernameEntitiesAfterRound1.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
+  const newUsernameSeeds=allUsernameSeedsAfterRound1.filter(seed=>!usernameSeeds.includes(seed));
+
+  const platformRun2=plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
+  const platform2=await preserve(caseId,query,platformRun2.results.filter(r=>r.classification!=="NOISE"));
+  const platformExtraction2=platform2.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   const pivotQueries=(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q));
   let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,deepValidated:0,deepRejected:0,sourceIds:[] as string[]};
@@ -342,21 +357,21 @@ export async function collectPublicSources(caseId:string,query:string){
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
-  const all=[...first.unique,...platform.unique,...second.unique];
+  const all=[...first.unique,...platform1.unique,...platform2.unique,...second.unique];
   const finalByUrl=new Map<string,Ranked>();
   for(const r of all){const prev=finalByUrl.get(r.url);if(!prev||r.score>prev.score)finalByUrl.set(r.url,r)}
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
-  const added=first.added+platform.added+second.added,skipped=first.skipped+platform.skipped+second.skipped,noise=first.noise+platform.noise+second.noise;
-  const deepValidated=first.deepValidated+platform.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform.deepRejected+second.deepRejected;
-  const serperCalls=firstRun.calls+platformRun.calls+secondCalls;
-  const failedSerperCalls=(firstRun.failedCalls??0)+(platformRun.failedCalls??0);
+  const added=first.added+platform1.added+platform2.added+second.added,skipped=first.skipped+platform1.skipped+platform2.skipped+second.skipped,noise=first.noise+platform1.noise+platform2.noise+second.noise;
+  const deepValidated=first.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
+  const serperCalls=firstRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
+  const failedSerperCalls=(firstRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
     description:`Used ${serperCalls} rate-limited paginated public-web searches; ${failedSerperCalls} initial calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,platformCalls:platformRun.calls,platformFailedCalls:platformRun.failedCalls,platformQueries:platformRun.queries,serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,platformExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun.calls,platformFailedCalls:platformRun.failedCalls,usernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,platform:platformExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
 }
