@@ -118,7 +118,7 @@ export async function collectPublicSources(caseId:string,query:string){
   let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,candidates:0,sourceIds:[] as string[]};
   let secondCalls=0;
   let secondEnrichment={attempted:0,fetched:0,failed:0};
-  let secondValidation={validated:0,rejected:0};
+  let secondValidation={validated:0,rejected:0,pending:0};
   let secondExtraction={entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   if(pivotQueries.length){
@@ -136,15 +136,16 @@ export async function collectPublicSources(caseId:string,query:string){
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
   const rejectedCandidates=firstValidation.rejected+secondValidation.rejected;
   const validatedCandidates=firstValidation.validated+secondValidation.validated;
+  const pendingCandidates=firstValidation.pending+secondValidation.pending;
   const added=first.added+second.added-rejectedCandidates,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
   const serperCalls=firstRun.calls+secondCalls;
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
-    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, validated ${validatedCandidates} document candidates, rejected ${rejectedCandidates} unmatched candidates, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
+    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, validated ${validatedCandidates} document candidates, kept ${pendingCandidates} inaccessible candidates as unverified, rejected ${rejectedCandidates} unmatched candidates, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,validatedCandidates,rejectedCandidates,firstEnrichment,secondEnrichment,firstValidation,secondValidation,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,validatedCandidates,rejectedCandidates,pendingCandidates,firstEnrichment,secondEnrichment,firstValidation,secondValidation,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,validatedCandidates,rejectedCandidates,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,validatedCandidates,rejectedCandidates,pendingCandidates,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
