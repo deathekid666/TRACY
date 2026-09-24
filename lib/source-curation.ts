@@ -148,8 +148,11 @@ export async function curateSources(caseId:string,useAi=true){
     if(genericNoise(combined,source.url)&&!rootMatch&&!handleMatch){score-=70;reasons.push("generic or unrelated page")}
     if(!rootMatch&&!handleMatch){score-=35;reasons.push("no supported identity signal")}
 
-    const decision:CuratedDecision=score>=75?"KEEP":score>=45?"REVIEW":"REJECT";
     const category=categoryFrom(source);
+    const sourceClassification=String(m.classification??"");
+    const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
+    const decision:CuratedDecision=isAcademicCandidate?"REVIEW":(score>=75?"KEEP":score>=45?"REVIEW":"REJECT");
+    if(isAcademicCandidate)reasons.push("academic/document candidate retained for analyst review");
     preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score,category,snippet});
 
     if(decision!=="REJECT"&&aiCandidates.length<36){
