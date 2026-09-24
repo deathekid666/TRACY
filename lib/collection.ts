@@ -12,7 +12,7 @@ import { InternetArchiveConnector } from "@/lib/connectors/internet-archive";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
-const MAX_INITIAL_SEARCHES=12;
+const MAX_INITIAL_SEARCHES=14;
 const MAX_RECURSIVE_SEARCHES=4;
 const MAX_SERPER_CALLS=18;
 const MAX_DEEP_DOCUMENT_CHECKS=18;
