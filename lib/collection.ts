@@ -6,8 +6,12 @@ import { enrichPublicSources } from "@/lib/source-enrichment";
 import { buildSearchPlan } from "@/lib/search-planner";
 import { getPublicPivots } from "@/lib/public-pivots";
 import { fetchPublicPage } from "@/lib/public-page";
+import { CrossrefConnector } from "@/lib/connectors/crossref";
+import { OpenAlexConnector } from "@/lib/connectors/openalex";
+import { InternetArchiveConnector } from "@/lib/connectors/internet-archive";
 
 const connector=new SerperWebConnector();
+const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
 const MAX_INITIAL_SEARCHES=12;
 const MAX_RECURSIVE_SEARCHES=4;
 const MAX_SERPER_CALLS=18;
@@ -66,6 +70,29 @@ type Ranked=CollectedResult&{score:number;reasons:string[];classification:string
 function pagesForQuery(query:string,index:number){
   if(index<4)return [1,2];
   return [1];
+}
+
+async function runIndependentSources(original:string){
+  const batches=await Promise.all(independentConnectors.map(async source=>{
+    try{
+      const results=await source.search(original);
+      return results.map(result=>{
+        const scored=scoreResult(original,result);
+        const identityVisible=hasIdentityEvidence(original,result);
+        if(identityVisible){
+          scored.score=Math.min(100,scored.score+12);
+          scored.reasons.push(source.label+" independent-source signal");
+        }else{
+          scored.score=0;
+          scored.reasons.push("rejected: no identity evidence in independent source metadata");
+        }
+        return {...result,...scored,classification:classify(scored.score),discoveryQuery:source.id,page:1} as Ranked;
+      });
+    }catch{
+      return [] as Ranked[];
+    }
+  }));
+  return batches.flat();
 }
 
 async function runScholarQueries(original:string){
@@ -179,7 +206,8 @@ export async function collectPublicSources(caseId:string,query:string){
   const initialQueries=plan.queries.slice(0,MAX_INITIAL_SEARCHES);
   const firstRun=await runQueries(query,initialQueries,true);
   const scholarResults=plan.kind==="PERSON"?await runScholarQueries(query):[];
-  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults]);
+  const independentResults=plan.kind==="PERSON"?await runIndependentSources(query):[];
+  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults]);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
@@ -209,8 +237,8 @@ export async function collectPublicSources(caseId:string,query:string){
     caseId,title:"Deep public-footprint discovery",
     description:`Used ${serperCalls} paginated public-web searches; preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,scholarResultCount:scholarResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,scholarResultCount:scholarResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
