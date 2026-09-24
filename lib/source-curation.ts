@@ -163,12 +163,36 @@ export async function curateSources(caseId:string,useAi=true){
   const ai=useAi?await aiReview(personName,aiCandidates):{decisions:[] as AiDecision[],facts:[] as AiFact[],enabled:false};
   const aiById=new Map(ai.decisions.map(d=>[d.sourceId,d]));
 
+  const duplicateOf=new Map<string,string>();
+  const seenContent=new Map<string,string>();
+  const seenTitle=new Map<string,string>();
+  const rankedForDedupe=[...investigation.sources].sort((a,b)=>{
+    const as=preliminary.get(a.id)?.score??0;
+    const bs=preliminary.get(b.id)?.score??0;
+    return bs-as;
+  });
+
+  for(const source of rankedForDedupe){
+    const captureHash=source.evidence.find(e=>Boolean(e.sha256))?.sha256||"";
+    const titleKey=tokens(source.title||"").length>=4
+      ?domainOf(source.url)+"|"+norm(source.title||"")
+      :"";
+    const existing=(captureHash&&seenContent.get(captureHash))||(titleKey&&seenTitle.get(titleKey))||"";
+    if(existing){
+      duplicateOf.set(source.id,existing);
+      continue;
+    }
+    if(captureHash)seenContent.set(captureHash,source.id);
+    if(titleKey)seenTitle.set(titleKey,source.id);
+  }
+
   let kept=0,review=0,rejected=0;
   const finalDecisionById=new Map<string,CuratedDecision>();
   const updates=investigation.sources.map(source=>{
     const pre=preliminary.get(source.id)!;
     const aiDecision=aiById.get(source.id);
-    const decision=aiDecision?.decision??pre.decision;
+    const duplicateTarget=duplicateOf.get(source.id);
+    const decision:CuratedDecision=duplicateTarget?"REJECT":(aiDecision?.decision??pre.decision);
     finalDecisionById.set(source.id,decision);
     if(decision==="KEEP")kept++;
     else if(decision==="REVIEW")review++;
@@ -180,10 +204,11 @@ export async function curateSources(caseId:string,useAi=true){
       data:{metadata:{
         ...current,
         curatedDecision:decision,
-        curatedReason:aiDecision?.summary||pre.reason,
+        curatedReason:duplicateTarget?("Duplicate of source "+duplicateTarget):(aiDecision?.summary||pre.reason),
         curatedConfidence:aiDecision?.confidence??Math.max(0,Math.min(100,pre.score)),
         curatedCategory:aiDecision?.category||pre.category,
-        aiCurated:Boolean(aiDecision)
+        aiCurated:Boolean(aiDecision),
+        curatedDuplicateOf:duplicateTarget||undefined
       }}
     });
   });
@@ -231,6 +256,7 @@ export async function curateSources(caseId:string,useAi=true){
     occurredAt:new Date(),
     metadata:{
       kept,review,rejected,
+      duplicatesHidden:duplicateOf.size,
       aiEnabled:ai.enabled,
       aiRequested:useAi,
       aiDecisionCount:ai.decisions.length,
