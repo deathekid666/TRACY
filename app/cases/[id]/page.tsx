@@ -22,6 +22,13 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   });
   if (!investigation) notFound();
 
+  const discoveryEvent=investigation.events.find(e=>e.title==="Deep public-footprint discovery");
+  const discoveryMeta=(discoveryEvent?.metadata??{}) as Record<string,unknown>;
+  const platformCalls=typeof discoveryMeta.platformCalls==="number"?discoveryMeta.platformCalls:0;
+  const platformFailedCalls=typeof discoveryMeta.platformFailedCalls==="number"?discoveryMeta.platformFailedCalls:0;
+  const initialUsernameSeeds=Array.isArray(discoveryMeta.usernameSeeds)?discoveryMeta.usernameSeeds.map(String):[];
+  const newUsernameSeeds=Array.isArray(discoveryMeta.newUsernameSeeds)?discoveryMeta.newUsernameSeeds.map(String):[];
+
   const person=investigation.entities.find(e=>e.type==="PERSON");
   const username=investigation.entities.find(e=>e.type==="USERNAME");
   const defaultQuery=person?.label ?? username?.label ?? investigation.title;
@@ -61,6 +68,19 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <div className="flex items-center gap-3 border-b border-slate-800 p-5"><div className="rounded-lg bg-cyan-400/10 p-2 text-cyan-300"><Radar className="h-5 w-5"/></div><div><h2 className="font-medium">Discovery console</h2><p className="text-xs text-slate-500">Collect and preserve public-source launch points for this investigation.</p></div></div>
             <div className="p-5"><CollectSources caseId={id} defaultQuery={defaultQuery}/><div className="mt-4 flex flex-wrap gap-3 border-t border-slate-800/80 pt-4"><ExtractEvidence caseId={id}/><RunCorrelation caseId={id}/></div></div>
           </section>
+
+          {discoveryEvent&&<section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
+            <div className="flex items-center justify-between"><div><h2 className="font-medium">Discovery diagnostics</h2><p className="mt-1 text-xs text-slate-500">What the latest investigation actually searched.</p></div><Radar className="h-5 w-5 text-cyan-300"/></div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">Platform calls</div><div className="mt-1 text-lg font-semibold">{platformCalls}</div></div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">Failed platform calls</div><div className="mt-1 text-lg font-semibold">{platformFailedCalls}</div></div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-500">New handles discovered</div><div className="mt-1 text-lg font-semibold">{newUsernameSeeds.length}</div></div>
+            </div>
+            <div className="mt-4 space-y-2 text-xs text-slate-400">
+              <div><span className="text-slate-500">Initial handles:</span> {initialUsernameSeeds.length?initialUsernameSeeds.join(", "):"none"}</div>
+              <div><span className="text-slate-500">Second-round handles:</span> {newUsernameSeeds.length?newUsernameSeeds.join(", "):"none"}</div>
+            </div>
+          </section>}
 
           <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
             <div className="flex items-center justify-between"><div><h2 className="font-medium">Entity intelligence</h2><p className="mt-1 text-xs text-slate-500">Known identifiers associated with this case</p></div><Link href={`/cases/${id}/graph`} className="flex items-center gap-1 text-xs text-cyan-300">Open graph <ExternalLink className="h-3 w-3"/></Link></div>
