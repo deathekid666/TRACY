@@ -259,12 +259,12 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
   let added=0,skipped=0,noise=0,deepValidated=0,deepRejected=0;
   const sourceIds:string[]=[];
 
-  const saveResult=async(result:Ranked,content?:string,sha256?:string,contentType?:string)=>{
+  const saveResult=async(result:Ranked,content?:string,sha256?:string,contentType?:string,pageMeta?:{publishedAt?:string;modifiedAt?:string;imageUrl?:string;finalUrl?:string;fetchMode?:string})=>{
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists){skipped++;return}
     const source=await db.source.create({data:{
       caseId,url:result.url,title:result.title,provider:result.provider,
-      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:result.publishedAt,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
+      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
     }});
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
@@ -274,7 +274,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     if(content){
       await db.evidence.create({data:{
         caseId,sourceId:source.id,title:"Verified document/page content: "+result.title,content,sha256,observedAt:new Date(),
-        metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:result.url,contentType:contentType||"unknown",identityVerified:true}
+        metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:result.url,contentType:contentType||"unknown",identityVerified:true,publishedAt:pageMeta?.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode}
       }});
     }else sourceIds.push(source.id);
     added++;
@@ -296,7 +296,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     checked.result.score=Math.max(65,checked.result.score);
     checked.result.classification="POSSIBLE";
     checked.result.reasons=[...checked.result.reasons.filter(r=>!r.startsWith("rejected:")),"identity found inside fetched public document/page"];
-    await saveResult(checked.result,checked.page.text,checked.page.sha256,checked.page.contentType);
+    await saveResult(checked.result,checked.page.text,checked.page.sha256,checked.page.contentType,{publishedAt:checked.page.publishedAt,modifiedAt:checked.page.modifiedAt,imageUrl:checked.page.imageUrl,finalUrl:checked.page.finalUrl,fetchMode:checked.page.fetchMode});
     deepValidated++;
   }
 
