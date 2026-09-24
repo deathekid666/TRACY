@@ -16,6 +16,8 @@ const MAX_INITIAL_SEARCHES=20;
 const MAX_RECURSIVE_SEARCHES=4;
 const MAX_SERPER_CALLS=30;
 const MAX_DEEP_DOCUMENT_CHECKS=24;
+const SERPER_BATCH_SIZE=4;
+const SERPER_BATCH_DELAY_MS=1100;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
 function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
@@ -140,21 +142,37 @@ async function runQueries(original:string,queries:string[],deep=true){
     if(jobs.length>=MAX_SERPER_CALLS)break;
   }
 
-  const batches=await Promise.all(jobs.map(async job=>{
-    const results=await connector.searchPage(job.query,job.page);
-    return results.map(result=>{
-      const scored=scoreResult(original,result);
-      const combined=result.title+" "+(result.snippet||"");
-      const identityVisible=hasIdentityEvidence(original,result);
-      if(identityVisible&&isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
-      if(identityVisible&&isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
-      if(identityVisible&&isAccountLike(result)){scored.score=Math.min(100,scored.score+10);scored.reasons.push("public account/profile signal")}
-      if(identityVisible&&isCommerceLike(result)){scored.score=Math.min(100,scored.score+8);scored.reasons.push("public commerce/payment-page signal")}
-      if(!identityVisible){scored.score=0;scored.reasons.push("rejected: no identity evidence in result")}
-      return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
-    });
-  }));
-  return {results:batches.flat(),calls:jobs.length,jobs};
+  const batches:Ranked[][]=[];
+  let failedCalls=0;
+
+  for(let i=0;i<jobs.length;i+=SERPER_BATCH_SIZE){
+    const group=jobs.slice(i,i+SERPER_BATCH_SIZE);
+    const settled=await Promise.all(group.map(async job=>{
+      try{
+        const results=await connector.searchPage(job.query,job.page);
+        return results.map(result=>{
+          const scored=scoreResult(original,result);
+          const combined=result.title+" "+(result.snippet||"");
+          const identityVisible=hasIdentityEvidence(original,result);
+          if(identityVisible&&isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
+          if(identityVisible&&isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
+          if(identityVisible&&isAccountLike(result)){scored.score=Math.min(100,scored.score+10);scored.reasons.push("public account/profile signal")}
+          if(identityVisible&&isCommerceLike(result)){scored.score=Math.min(100,scored.score+8);scored.reasons.push("public commerce/payment-page signal")}
+          if(!identityVisible){scored.score=0;scored.reasons.push("rejected: no identity evidence in result")}
+          return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
+        });
+      }catch{
+        failedCalls++;
+        return [] as Ranked[];
+      }
+    }));
+    batches.push(...settled);
+    if(i+SERPER_BATCH_SIZE<jobs.length){
+      await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
+    }
+  }
+
+  return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
 }
 
 async function preserve(caseId:string,original:string,results:Ranked[]){
@@ -244,13 +262,14 @@ export async function collectPublicSources(caseId:string,query:string){
   const added=first.added+second.added,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
   const deepValidated=first.deepValidated+second.deepValidated,deepRejected=first.deepRejected+second.deepRejected;
   const serperCalls=firstRun.calls+secondCalls;
+  const failedSerperCalls=(firstRun.failedCalls??0);
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
-    description:`Used ${serperCalls} paginated public-web searches; preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
+    description:`Used ${serperCalls} rate-limited paginated public-web searches; ${failedSerperCalls} initial calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
