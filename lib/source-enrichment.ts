@@ -22,10 +22,22 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[]){
   const outcomes=await Promise.all(prioritized.map(async source=>{
     const page=await fetchPublicPage(source.url);
     if(!page)return false;
+    const currentMeta=(source.metadata??{}) as Record<string,unknown>;
+    await db.source.update({
+      where:{id:source.id},
+      data:{metadata:{
+        ...currentMeta,
+        publishedAt:page.publishedAt??currentMeta.publishedAt,
+        modifiedAt:page.modifiedAt??currentMeta.modifiedAt,
+        imageUrl:page.imageUrl??currentMeta.imageUrl,
+        finalUrl:page.finalUrl,
+        fetchMode:page.fetchMode??"direct"
+      }}
+    });
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:`Public page capture: ${source.title||page.finalUrl}`,content:page.text,
       sha256:page.sha256,observedAt:new Date(page.collectedAt),
-      metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType,fetchMode:page.fetchMode??"direct"}
+      metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType,fetchMode:page.fetchMode??"direct",publishedAt:page.publishedAt,modifiedAt:page.modifiedAt,imageUrl:page.imageUrl}
     }});
     return true;
   }));
