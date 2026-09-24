@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import { CollectSources } from "@/components/CollectSources";
+import { AutoQuickScan } from "@/components/AutoQuickScan";
 
 export const dynamic = "force-dynamic";
 
@@ -115,7 +116,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <div className="border-t border-slate-800 bg-slate-950/75 p-6 lg:border-l lg:border-t-0 md:p-8">
             <div className="flex items-center justify-between"><div><div className="text-[10px] font-semibold tracking-[.22em] text-cyan-300">SCAN CONTROL</div><div className="mt-1 text-sm text-slate-400">Fast first, deep when needed.</div></div><Radar className="h-5 w-5 text-cyan-300"/></div>
-            <div className="mt-5"><CollectSources caseId={id} defaultQuery={defaultQuery}/></div>
+            <div className="mt-5"><CollectSources caseId={id} defaultQuery={defaultQuery}/><AutoQuickScan caseId={id} query={defaultQuery} enabled={investigation._count.sources===0}/></div>
           </div>
         </div>
       </section>
