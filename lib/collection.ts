@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
-import { GoogleNewsConnector, WikipediaConnector } from "@/lib/connectors/web";
+import { DuckDuckGoHtmlConnector, GoogleNewsConnector, WikipediaConnector } from "@/lib/connectors/web";
 
-const connectors=[new WikipediaConnector(),new GoogleNewsConnector()];
+const connectors=[new DuckDuckGoHtmlConnector(),new WikipediaConnector(),new GoogleNewsConnector()];
 
 export async function collectPublicSources(caseId:string,query:string){
   const batches=await Promise.allSettled(connectors.map(c=>c.search(query)));
