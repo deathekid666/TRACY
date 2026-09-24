@@ -8,7 +8,8 @@ import { getPublicPivots } from "@/lib/public-pivots";
 
 const connector=new SerperWebConnector();
 const MAX_INITIAL_SEARCHES=8;
-const MAX_RECURSIVE_SEARCHES=5;
+const MAX_RECURSIVE_SEARCHES=4;
+const MAX_SERPER_CALLS=20;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
 function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
@@ -20,31 +21,59 @@ function usernameFromUrl(url:string){
   }catch{}
   return "";
 }
+function allTokensPresent(haystack:string,needles:string[]){const hs=new Set(norm(haystack).split(/\s+/).filter(Boolean));return needles.length>0&&needles.every(t=>hs.has(t))}
+function reversedQuery(query:string){return query.trim().split(/\s+/).reverse().join(" ")}
+
 function scoreResult(query:string,result:CollectedResult){
-  const q=norm(query),qt=tokens(query),title=norm(result.title),snippet=norm(result.snippet||""),url=norm(result.url);
+  const q=norm(query),rq=norm(reversedQuery(query)),qt=tokens(query);
+  const title=norm(result.title),snippet=norm(result.snippet||""),url=norm(result.url);
   let score=0;const reasons:string[]=[];
-  if(title.includes(q)){score+=55;reasons.push("exact query in title")}
-  else{const hits=qt.filter(t=>title.split(" ").includes(t)).length;if(hits===qt.length&&qt.length){score+=42;reasons.push("all query tokens in title")}else if(hits){score+=Math.round(25*hits/qt.length);reasons.push("partial query match")}}
-  if(snippet.includes(q)){score+=20;reasons.push("exact query in snippet")}
-  const urlHits=qt.filter(t=>url.includes(t)).length;if(urlHits===qt.length&&qt.length){score+=15;reasons.push("query in URL")}
-  const user=usernameFromUrl(result.url);if(user&&qt.every(t=>norm(user).includes(t))){score+=10;reasons.push("matching public username")}
+
+  if(title.includes(q)||title.includes(rq)){score+=55;reasons.push("name phrase in title")}
+  else if(allTokensPresent(title,qt)){score+=48;reasons.push("all name tokens in title")}
+
+  if(snippet.includes(q)||snippet.includes(rq)){score+=35;reasons.push("name phrase in snippet")}
+  else if(allTokensPresent(snippet,qt)){score+=32;reasons.push("all name tokens in snippet")}
+
+  if(allTokensPresent(url,qt)){score+=15;reasons.push("name tokens in URL")}
+  const user=usernameFromUrl(result.url);
+  if(user&&qt.every(t=>norm(user).includes(t))){score+=10;reasons.push("matching public username")}
+
   return {score:Math.min(score,100),reasons};
 }
 function classify(score:number){return score>=70?"STRONG":score>=45?"POSSIBLE":"NOISE"}
-function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|universit|facult|fsjes|fsjp|cv|resume/.test(s)}
+function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours/.test(s)}
+function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|etudiant|étudiant/.test(s)}
 
-type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string};
+type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string;page:number};
 
-async function runQueries(original:string,queries:string[]){
-  const batches=await Promise.all(queries.map(async discoveryQuery=>{
-    const results=await connector.search(discoveryQuery);
+function pagesForQuery(query:string,index:number){
+  if(index<2)return [1,2];
+  if(/universit|facult|fsjes|fsjp|encg|est|pdf|liste|resultat|inscription|concours|memoire|soutenance/i.test(query))return [1,2,3];
+  return [1,2];
+}
+
+async function runQueries(original:string,queries:string[],deep=true){
+  const jobs:Array<{query:string;page:number}>=[];
+  for(let i=0;i<queries.length;i++){
+    const pages=deep?pagesForQuery(queries[i],i):[1];
+    for(const page of pages){
+      if(jobs.length>=MAX_SERPER_CALLS)break;
+      jobs.push({query:queries[i],page});
+    }
+    if(jobs.length>=MAX_SERPER_CALLS)break;
+  }
+
+  const batches=await Promise.all(jobs.map(async job=>{
+    const results=await connector.searchPage(job.query,job.page);
     return results.map(result=>{
       const scored=scoreResult(original,result);
-      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+15);scored.reasons.push("document/academic signal")}
-      return {...result,...scored,classification:classify(scored.score),discoveryQuery} as Ranked;
+      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal")}
+      if(isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal")}
+      return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
     });
   }));
-  return batches.flat();
+  return {results:batches.flat(),calls:jobs.length,jobs};
 }
 
 async function preserve(caseId:string,original:string,results:Ranked[]){
@@ -54,9 +83,16 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
     if(result.classification==="NOISE"){noise++;continue}
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists){skipped++;continue}
-    const source=await db.source.create({data:{caseId,url:result.url,title:result.title,provider:result.provider,metadata:{query:original,discoveryQuery:result.discoveryQuery,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons}}});
+    const source=await db.source.create({data:{
+      caseId,url:result.url,title:result.title,provider:result.provider,
+      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result)}
+    }});
     sourceIds.push(source.id);
-    await db.evidence.create({data:{caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",observedAt:result.observedAt?new Date(result.observedAt):new Date(),metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,provider:result.provider,identityScore:result.score,classification:result.classification,reasons:result.reasons}}});
+    await db.evidence.create({data:{
+      caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
+      observedAt:result.observedAt?new Date(result.observedAt):new Date(),
+      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,identityScore:result.score,classification:result.classification,reasons:result.reasons}
+    }});
     added++;
   }
   return {unique,added,skipped,noise,sourceIds};
@@ -65,29 +101,36 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
 export async function collectPublicSources(caseId:string,query:string){
   const plan=buildSearchPlan(query);
   const initialQueries=plan.queries.slice(0,MAX_INITIAL_SEARCHES);
-  const firstResults=await runQueries(query,initialQueries);
-  const first=await preserve(caseId,query,firstResults);
+  const firstRun=await runQueries(query,initialQueries,true);
+  const first=await preserve(caseId,query,firstRun.results);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const pivotQueries=(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q));
   let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,sourceIds:[] as string[]};
+  let secondCalls=0;
   let secondEnrichment={attempted:0,fetched:0,failed:0};
-  let secondExtraction={entitiesCreated:0,linksCreated:0};
+  let secondExtraction={entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   if(pivotQueries.length){
-    const pivotResults=await runQueries(query,pivotQueries);
-    second=await preserve(caseId,query,pivotResults);
+    const pivotRun=await runQueries(query,pivotQueries,false);
+    secondCalls=pivotRun.calls;
+    second=await preserve(caseId,query,pivotRun.results);
     secondEnrichment=await enrichPublicSources(caseId,second.sourceIds);
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
   const all=[...first.unique,...second.unique];
   const uniqueResults=[...new Map(all.map(r=>[r.url,r])).values()].sort((a,b)=>b.score-a.score);
-  const searches=[...initialQueries,...pivotQueries];
   const added=first.added+second.added,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
+  const serperCalls=firstRun.calls+secondCalls;
 
-  await db.event.create({data:{caseId,title:"Recursive public-footprint discovery",description:`Ran ${searches.length} public searches across ${plan.kind.toLowerCase()} discovery and evidence-derived pivots; preserved ${added} new sources, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,occurredAt:new Date(),metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,searchCount:searches.length,added,noise,skipped,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}}});
+  await db.event.create({data:{
+    caseId,title:"Deep public-footprint discovery",
+    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
+    occurredAt:new Date(),
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
+  }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:searches,noise,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
