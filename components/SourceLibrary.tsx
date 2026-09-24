@@ -26,7 +26,7 @@ function dateLabel(value?:string){
 }
 
 export function SourceLibrary({items}:{items:SourceLibraryItem[]}){
-  const [view,setView]=useState<"RELEVANT"|"REVIEW"|"HIDDEN"|"ALL">("RELEVANT");
+  const [view,setView]=useState<"RELEVANT"|"REVIEW"|"HIDDEN"|"ALL">("ALL");
   const [category,setCategory]=useState("ALL");
   const [query,setQuery]=useState("");
 
@@ -48,7 +48,10 @@ export function SourceLibrary({items}:{items:SourceLibraryItem[]}){
   }),[items,view,category,query]);
 
   return <div>
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <button onClick={()=>setView("ALL")} className={"rounded-xl border p-4 text-left "+(view==="ALL"?"border-cyan-400/40 bg-cyan-400/10":"border-slate-800 bg-slate-950/40")}>
+        <div className="text-[10px] uppercase tracking-[.18em] text-slate-500">All gathered</div><div className="mt-1 text-2xl font-semibold">{items.length}</div>
+      </button>
       <button onClick={()=>setView("RELEVANT")} className={"rounded-xl border p-4 text-left "+(view==="RELEVANT"?"border-emerald-400/40 bg-emerald-400/10":"border-slate-800 bg-slate-950/40")}>
         <div className="text-[10px] uppercase tracking-[.18em] text-slate-500">Relevant</div><div className="mt-1 text-2xl font-semibold">{counts.relevant}</div>
       </button>
@@ -67,7 +70,7 @@ export function SourceLibrary({items}:{items:SourceLibraryItem[]}){
         className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-300">
         {categories.map(c=><option key={c} value={c}>{c==="ALL"?"All categories":c.replaceAll("_"," ")}</option>)}
       </select>
-      <button onClick={()=>setView("ALL")} className="rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-400 hover:text-white">All raw sources</button>
+      <button onClick={()=>setView("ALL")} className="rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-300 hover:text-white">Show every gathered source</button>
     </div>
 
     <div className="mt-6 grid gap-4">
