@@ -11,6 +11,10 @@ export class SerperWebConnector implements PublicConnector{
   label="Google via Serper";
 
   async search(query:string):Promise<CollectedResult[]>{
+    return this.searchPage(query,1);
+  }
+
+  async searchPage(query:string,page=1):Promise<CollectedResult[]>{
     const apiKey=process.env.SERPER_API_KEY;
     if(!apiKey)throw new Error("SERPER_API_KEY_NOT_CONFIGURED");
 
@@ -21,13 +25,17 @@ export class SerperWebConnector implements PublicConnector{
       const response=await fetch("https://google.serper.dev/search",{
         method:"POST",
         headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
-        body:JSON.stringify({q,gl:"ma",num:10}),
+        body:JSON.stringify({q,gl:"ma",hl:"fr",num:10,page}),
         cache:"no-store",
       });
       if(response.ok){
         const data=(await response.json()) as SerperResponse;
         return (data.organic??[]).filter(item=>item.link&&item.title).map(item=>({
-          provider:"Google / Serper",title:item.title!,url:item.link!,snippet:item.snippet,observedAt:new Date().toISOString()
+          provider:`Google / Serper p${page}`,
+          title:item.title!,
+          url:item.link!,
+          snippet:item.snippet,
+          observedAt:new Date().toISOString()
         }));
       }
       lastStatus=response.status;
