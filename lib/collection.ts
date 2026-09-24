@@ -10,6 +10,7 @@ import { CrossrefConnector } from "@/lib/connectors/crossref";
 import { OpenAlexConnector } from "@/lib/connectors/openalex";
 import { InternetArchiveConnector } from "@/lib/connectors/internet-archive";
 import { buildNamePlatformQueries, buildUsernamePlatformQueries, type PlatformDiscoveryQuery } from "@/lib/platform-discovery";
+import { curateSources } from "@/lib/source-curation";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
@@ -304,15 +305,16 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
   return {unique,added,skipped,noise,deepValidated,deepRejected,sourceIds};
 }
 
-export async function collectPublicSources(caseId:string,query:string){
+export async function collectPublicSources(caseId:string,query:string,mode:"quick"|"deep"="deep"){
   const stale=await db.source.findMany({where:{caseId,provider:{startsWith:"Google / Serper"}},select:{id:true,metadata:true}});
   const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"||m.classification==="CANDIDATE"}).map(s=>s.id);
   if(staleIds.length){await db.evidence.deleteMany({where:{sourceId:{in:staleIds}}});await db.source.deleteMany({where:{id:{in:staleIds}}});}
   const plan=buildSearchPlan(query);
-  const initialQueries=plan.queries.slice(0,MAX_INITIAL_SEARCHES);
-  const firstRun=await runQueries(query,initialQueries,true);
-  const scholarResults=plan.kind==="PERSON"?await runScholarQueries(query):[];
-  const independentResults=plan.kind==="PERSON"?await runIndependentSources(query):[];
+  const initialLimit=mode==="quick"?6:MAX_INITIAL_SEARCHES;
+  const initialQueries=plan.queries.slice(0,initialLimit);
+  const firstRun=await runQueries(query,initialQueries,mode==="deep");
+  const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
+  const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
   const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults]);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
   const firstExtraction=await extractEvidenceEntities(caseId);
@@ -326,7 +328,7 @@ export async function collectPublicSources(caseId:string,query:string){
   const usernameSeeds=[...new Set(usernameEntities.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
 
   const emptyPlatformRun={results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
-  const platformRun1=plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
+  const platformRun1=mode==="deep"&&plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
   const platform1=await preserve(caseId,query,platformRun1.results.filter(r=>r.classification!=="NOISE"));
   const platformExtraction1=platform1.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
@@ -339,11 +341,11 @@ export async function collectPublicSources(caseId:string,query:string){
   const allUsernameSeedsAfterRound1=[...new Set(usernameEntitiesAfterRound1.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
   const newUsernameSeeds=allUsernameSeedsAfterRound1.filter(seed=>!usernameSeeds.includes(seed));
 
-  const platformRun2=plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
+  const platformRun2=mode==="deep"&&plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
   const platform2=await preserve(caseId,query,platformRun2.results.filter(r=>r.classification!=="NOISE"));
   const platformExtraction2=platform2.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
-  const pivotQueries=(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q));
+  const pivotQueries=mode==="deep"?(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q)):[];
   let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,deepValidated:0,deepRejected:0,sourceIds:[] as string[]};
   let secondCalls=0;
   let secondEnrichment={attempted:0,fetched:0,failed:0};
@@ -365,13 +367,14 @@ export async function collectPublicSources(caseId:string,query:string){
   const deepValidated=first.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
   const serperCalls=firstRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
   const failedSerperCalls=(firstRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
+  const curation=await curateSources(caseId);
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
-    description:`Used ${serperCalls} rate-limited paginated public-web searches; ${failedSerperCalls} initial calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
+    description:`${mode==="quick"?"Quick":"Deep"} scan used ${serperCalls} rate-limited public-web searches; ${failedSerperCalls} calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction}
+    metadata:{mode,query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
+  return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
 }
