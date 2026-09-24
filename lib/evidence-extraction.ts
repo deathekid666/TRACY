@@ -34,7 +34,7 @@ function canonicalPhone(raw:string){
 
 export async function extractEvidenceEntities(caseId:string){
   const stale=await db.entity.findMany({
-    where:{caseId,type:{in:["PHONE","DOMAIN"]}},
+    where:{caseId,type:{in:["PHONE","DOMAIN","USERNAME"]}},
     select:{id:true,metadata:true}
   });
   const staleIds=stale.filter(e=>{
@@ -136,7 +136,7 @@ export async function extractEvidenceEntities(caseId:string){
     title:"Evidence extraction run",
     description:"Extracted "+entitiesCreated+" context-supported identifiers and "+linksCreated+" evidence links. Public contacts are accepted only when the searched identity is nearby or the source title identifies the person.",
     occurredAt:new Date(),
-    metadata:{entitiesCreated,linksCreated,removedUnsafeEntities:staleIds.length,phoneExtraction:"context-only",domainBodyExtraction:"disabled"}
+    metadata:{entitiesCreated,linksCreated,removedUnsafeEntities:staleIds.length,usernamePromotion:"identity-context-required",phoneExtraction:"context-only",domainBodyExtraction:"disabled"}
   }});
 
   return {entitiesCreated,linksCreated,removedUnsafePhones:staleIds.length};
