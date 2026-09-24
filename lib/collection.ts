@@ -14,7 +14,7 @@ const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
 const MAX_INITIAL_SEARCHES=20;
 const MAX_RECURSIVE_SEARCHES=4;
-const MAX_SERPER_CALLS=26;
+const MAX_SERPER_CALLS=30;
 const MAX_DEEP_DOCUMENT_CHECKS=24;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
@@ -77,7 +77,8 @@ function categoryFor(r:CollectedResult){
 type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string;page:number};
 
 function pagesForQuery(query:string,index:number){
-  if(index<4)return [1,2];
+  if(index<2)return [1,2,3];
+  if(/\bsite:|\bfiletype:/i.test(query))return [1,2];
   return [1];
 }
 
