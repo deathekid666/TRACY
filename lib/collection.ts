@@ -11,6 +11,8 @@ import { OpenAlexConnector } from "@/lib/connectors/openalex";
 import { InternetArchiveConnector } from "@/lib/connectors/internet-archive";
 import { buildNamePlatformQueries, buildUsernamePlatformQueries, type PlatformDiscoveryQuery } from "@/lib/platform-discovery";
 import { curateSources } from "@/lib/source-curation";
+import { buildAcademicQueries } from "@/lib/academic-discovery";
+import { extractAcademicIntelligence } from "@/lib/academic-intelligence";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
@@ -315,7 +317,9 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const firstRun=await runQueries(query,initialQueries,mode==="deep");
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
-  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
+  const academicQueries=plan.kind==="PERSON"?buildAcademicQueries(query).slice(0,mode==="quick"?5:16):[];
+  const academicRun=academicQueries.length?await runQueries(query,academicQueries,false):{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
+  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults,...academicRun.results],mode==="deep");
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
   const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
   const firstEnrichmentIds=[...new Set([...first.sourceIds,...staleEnrichmentIds])];
@@ -370,16 +374,17 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
   const added=first.added+platform1.added+platform2.added+second.added,skipped=first.skipped+platform1.skipped+platform2.skipped+second.skipped,noise=first.noise+platform1.noise+platform2.noise+second.noise;
   const deepValidated=first.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
-  const serperCalls=firstRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
-  const failedSerperCalls=(firstRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
+  const serperCalls=firstRun.calls+academicRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
+  const failedSerperCalls=(firstRun.failedCalls??0)+(academicRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
   const curation=await curateSources(caseId,mode==="deep");
+  const academicIntelligence=plan.kind==="PERSON"?await extractAcademicIntelligence(caseId,query):{records:[]};
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
     description:`${mode==="quick"?"Quick":"Deep"} scan used ${serperCalls} rate-limited public-web searches; ${failedSerperCalls} calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{mode,query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation}
+    metadata:{mode,query,inputKind:plan.kind,initialQueries,academicQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
   }});
 
-  return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,enrichment:{first:firstEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
+  return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
 }
