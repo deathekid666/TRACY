@@ -50,6 +50,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
   const curationEvent=investigation.events.find(e=>e.title==="Source curation");
   const curationMeta=meta(curationEvent?.metadata);
+  const aiCurationEnabled=curationMeta.aiEnabled===true;
+  const aiCurationRequested=curationMeta.aiRequested===true;
   const facts=(Array.isArray(curationMeta.facts)?curationMeta.facts:[]) as AiFact[];
   const birthFact=facts.find(f=>f.type==="BIRTH_DATE");
   const aliases=facts.filter(f=>f.type==="ALIAS");
@@ -185,7 +187,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
             <div className="flex items-center justify-between"><div><h2 className="font-medium">Evidence quality</h2><p className="mt-1 text-xs text-slate-500">Curated before display.</p></div><FileCheck2 className="h-5 w-5 text-cyan-300"/></div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center"><SmallStat label="Relevant" value={relevantSources.length}/><SmallStat label="Review" value={reviewSources.length}/><SmallStat label="Hidden" value={rejectedCount}/></div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center"><SmallStat label="Relevant" value={relevantSources.length}/><SmallStat label="Review" value={reviewSources.length}/><SmallStat label="Hidden" value={rejectedCount}/></div><div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/30 px-3 py-2 text-[11px] text-slate-500">{aiCurationEnabled?"AI curation active":aiCurationRequested?"AI curation requested but unavailable; deterministic filtering used":"Deterministic filtering used for this scan"}</div>
             <Link href={`/cases/${id}/sources`} className="mt-4 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3 text-sm hover:border-cyan-400/20"><span>Open filtered source library</span><ExternalLink className="h-4 w-4 text-cyan-300"/></Link>
           </section>
 
