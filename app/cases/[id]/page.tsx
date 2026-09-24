@@ -24,6 +24,7 @@ function decision(source:{metadata:unknown}){return String(meta(source.metadata)
 function sourceCategory(source:{metadata:unknown}){const m=meta(source.metadata);return String(m.curatedCategory??m.category??"GENERAL")}
 
 type AiFact={type:string;value:string;confidence:number;sourceIds:string[]};
+type AcademicRecord={sourceId:string;sourceTitle:string;sourceUrl:string;institution?:string;academicYear?:string;semester?:string;session?:string;program?:string;module?:string;studentRecordId?:string;matchedName:string;confidence:number};
 
 export default async function CasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -61,6 +62,10 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const educationFacts=facts.filter(f=>f.type==="EDUCATION");
   const employmentFacts=facts.filter(f=>f.type==="EMPLOYMENT");
   const otherFacts=facts.filter(f=>!["BIRTH_DATE","ALIAS","NATIONALITY","LANGUAGE","LOCATION","EDUCATION","EMPLOYMENT"].includes(f.type));
+
+  const academicEvent=investigation.events.find(e=>e.title==="Academic intelligence");
+  const academicMeta=meta(academicEvent?.metadata);
+  const academicRecords=(Array.isArray(academicMeta.records)?academicMeta.records:[]) as AcademicRecord[];
 
   const visibleSources=investigation.sources.filter(s=>decision(s)!=="REJECT");
   const relevantSources=visibleSources.filter(s=>decision(s)==="KEEP");
@@ -154,6 +159,25 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{photos.map(p=><a key={p.image} href={p.source.url} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-900"><img src={p.image} alt="" className="aspect-square w-full object-cover transition group-hover:scale-[1.03]"/><div className="truncate px-2 py-2 text-[10px] text-slate-500">{p.source.provider||"Public source"}</div></a>)}</div>
           </section>}
 
+          {academicRecords.length>0&&<section className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><div className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-cyan-300"/><h2 className="font-medium">University & academic records</h2></div><p className="mt-1 text-xs text-slate-500">Structured only from public records where the searched identity appears in the source itself.</p></div>
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[.06] px-3 py-1 text-[10px] uppercase tracking-wider text-cyan-300">{academicRecords.length} matched record{academicRecords.length===1?"":"s"}</span>
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">{academicRecords.map((record,i)=><article key={record.sourceId+"-"+i} className="rounded-2xl border border-slate-800 bg-slate-900/35 p-4">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-semibold uppercase tracking-[.16em] text-cyan-300">{record.institution||"Academic public record"}</div><div className="mt-2 line-clamp-2 text-sm font-medium">{record.sourceTitle}</div></div><span className="shrink-0 text-[10px] text-slate-600">{record.confidence}%</span></div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                {record.academicYear&&<AcademicField label="Academic year" value={record.academicYear}/>}
+                {record.semester&&<AcademicField label="Semester" value={record.semester}/>}
+                {record.session&&<AcademicField label="Session" value={record.session}/>}
+                {record.program&&<AcademicField label="Program / Filière" value={record.program}/>}
+                {record.module&&<AcademicField label="Module" value={record.module}/>}
+                {record.studentRecordId&&<AcademicField label="Public student record ID" value={record.studentRecordId}/>}
+              </div>
+              <a href={record.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs text-cyan-300">Open supporting source <ExternalLink className="h-3 w-3"/></a>
+            </article>)}</div>
+          </section>}
+
           <section className="grid gap-6 lg:grid-cols-2">
             <DossierSection title="Social & public accounts" icon={AtSign} items={accounts.slice(0,8)} caseId={id}/>
             <section className="space-y-6"><DossierSection title="Education & documents" icon={GraduationCap} items={documents.slice(0,8)} caseId={id}/>{educationFacts.length>0&&<FactList title="Education facts" facts={educationFacts}/>}</section>
@@ -215,3 +239,5 @@ function Exposure({label,found,detail}:{label:string;found:boolean;detail:string
 function DossierSection({title,icon:Icon,items,caseId}:{title:string;icon:any;items:Array<{id:string;url:string;title:string|null;provider:string|null;metadata:unknown}>;caseId:string}){return <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300"/><h2 className="font-medium">{title}</h2></div><Link href={`/cases/${caseId}/sources`} className="text-xs text-cyan-300">All →</Link></div><div className="mt-4 space-y-3">{items.length?items.map(s=>{const m=meta(s.metadata);return <a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-800 bg-slate-900/30 p-3 hover:border-cyan-400/20"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm">{s.title||s.url}</div><div className="mt-1 truncate text-[11px] text-slate-600">{s.provider||"SOURCE"}</div></div><span className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-[9px] uppercase tracking-wider text-slate-500">{String(m.curatedDecision??m.classification??"")}</span></div>{text(m.publishedAt)&&<div className="mt-2 text-[10px] text-slate-600">Released {dateLabel(m.publishedAt)}</div>}</a>}):<p className="text-sm text-slate-500">Nothing established in this section yet.</p>}</div></section>}
 
 function FactList({title,facts}:{title:string;facts:AiFact[]}){return <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5"><h3 className="font-medium">{title}</h3><div className="mt-3 space-y-2">{facts.map((fact,i)=><div key={i} className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="text-sm">{fact.value}</div><div className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">{fact.confidence}% · {fact.sourceIds.length} source{fact.sourceIds.length===1?"":"s"}</div></div>)}</div></section>}
+
+function AcademicField({label,value}:{label:string;value:string}){return <div className="rounded-xl border border-slate-800 bg-slate-950/45 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-600">{label}</div><div className="mt-1 text-sm text-slate-200">{value}</div></div>}
