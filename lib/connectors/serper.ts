@@ -25,7 +25,7 @@ export class SerperWebConnector implements PublicConnector{
       const response=await fetch("https://google.serper.dev/search",{
         method:"POST",
         headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
-        body:JSON.stringify({q,gl:"ma",hl:"fr",num:10,page}),
+        body:JSON.stringify({q,gl:"ma",hl:"fr",num:30,page}),
         cache:"no-store",
       });
       if(response.ok){
