@@ -5,7 +5,6 @@ import { extractEvidenceEntities } from "@/lib/evidence-extraction";
 import { enrichPublicSources } from "@/lib/source-enrichment";
 import { buildSearchPlan } from "@/lib/search-planner";
 import { getPublicPivots } from "@/lib/public-pivots";
-import { validateCandidateSources } from "@/lib/source-validation";
 
 const connector=new SerperWebConnector();
 const MAX_INITIAL_SEARCHES=8;
@@ -43,6 +42,11 @@ function scoreResult(query:string,result:CollectedResult){
   return {score:Math.min(score,100),reasons};
 }
 function classify(score:number){return score>=70?"STRONG":score>=45?"POSSIBLE":"NOISE"}
+function hasIdentityEvidence(query:string,result:CollectedResult){
+  const qt=tokens(query);
+  const title=result.title||"",snippet=result.snippet||"",url=result.url||"";
+  return allTokensPresent(title,qt)||allTokensPresent(snippet,qt)||allTokensPresent(url,qt);
+}
 function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|student|students|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours|scribd|academia|researchgate|drive\.google|docs\.google/.test(s)}
 function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
 
@@ -70,8 +74,10 @@ async function runQueries(original:string,queries:string[],deep=true){
     return results.map(result=>{
       const scored=scoreResult(original,result);
       const combined=result.title+" "+(result.snippet||"");
-      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
-      if(isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
+      const identityVisible=hasIdentityEvidence(original,result);
+      if(identityVisible&&isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
+      if(identityVisible&&isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
+      if(!identityVisible){scored.score=0;scored.reasons.push("rejected: no identity evidence in result")}
       return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
     });
   }));
@@ -82,12 +88,10 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
-  let added=0,skipped=0,noise=0,candidates=0;const sourceIds:string[]=[];
+  let added=0,skipped=0,noise=0;const sourceIds:string[]=[];
   for(const result of unique){
-    const candidate=result.classification==="NOISE"&&(isDocumentLike(result)||isInstitutionLike(result));
-    if(result.classification==="NOISE"&&!candidate){noise++;continue}
-    if(candidate)candidates++;
-    const storedClassification=candidate?"CANDIDATE":result.classification;
+    if(result.classification==="NOISE"){noise++;continue}
+    const storedClassification=result.classification;
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists){skipped++;continue}
     const source=await db.source.create({data:{
@@ -102,23 +106,24 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
     }});
     added++;
   }
-  return {unique,added,skipped,noise,candidates,sourceIds};
+  return {unique,added,skipped,noise,sourceIds};
 }
 
 export async function collectPublicSources(caseId:string,query:string){
+  const stale=await db.source.findMany({where:{caseId,provider:{startsWith:"Google / Serper"}},select:{id:true,metadata:true}});
+  const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"||m.classification==="CANDIDATE"}).map(s=>s.id);
+  if(staleIds.length){await db.evidence.deleteMany({where:{sourceId:{in:staleIds}}});await db.source.deleteMany({where:{id:{in:staleIds}}});}
   const plan=buildSearchPlan(query);
   const initialQueries=plan.queries.slice(0,MAX_INITIAL_SEARCHES);
   const firstRun=await runQueries(query,initialQueries,true);
   const first=await preserve(caseId,query,firstRun.results);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
-  const firstValidation=await validateCandidateSources(caseId,first.sourceIds,query);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const pivotQueries=(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q));
-  let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,candidates:0,sourceIds:[] as string[]};
+  let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,sourceIds:[] as string[]};
   let secondCalls=0;
   let secondEnrichment={attempted:0,fetched:0,failed:0};
-  let secondValidation={validated:0,rejected:0,pending:0};
   let secondExtraction={entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   if(pivotQueries.length){
@@ -126,7 +131,6 @@ export async function collectPublicSources(caseId:string,query:string){
     secondCalls=pivotRun.calls;
     second=await preserve(caseId,query,pivotRun.results);
     secondEnrichment=await enrichPublicSources(caseId,second.sourceIds);
-    secondValidation=await validateCandidateSources(caseId,second.sourceIds,query);
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
@@ -134,18 +138,15 @@ export async function collectPublicSources(caseId:string,query:string){
   const finalByUrl=new Map<string,Ranked>();
   for(const r of all){const prev=finalByUrl.get(r.url);if(!prev||r.score>prev.score)finalByUrl.set(r.url,r)}
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
-  const rejectedCandidates=firstValidation.rejected+secondValidation.rejected;
-  const validatedCandidates=firstValidation.validated+secondValidation.validated;
-  const pendingCandidates=firstValidation.pending+secondValidation.pending;
-  const added=first.added+second.added-rejectedCandidates,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
+  const added=first.added+second.added,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
   const serperCalls=firstRun.calls+secondCalls;
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
-    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, validated ${validatedCandidates} document candidates, kept ${pendingCandidates} inaccessible candidates as unverified, rejected ${rejectedCandidates} unmatched candidates, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
+    description:`Used ${serperCalls} paginated public-web searches; preserved ${added} sources with visible identity evidence, filtered ${noise} unrelated results and skipped ${skipped} duplicates. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,validatedCandidates,rejectedCandidates,pendingCandidates,firstEnrichment,secondEnrichment,firstValidation,secondValidation,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,validatedCandidates,rejectedCandidates,pendingCandidates,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,removedStale:staleIds.length,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
