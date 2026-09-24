@@ -2,7 +2,9 @@ import { createHash } from "crypto";
 
 const MAX_HTML_BYTES=1_000_000;
 const MAX_PDF_BYTES=8_000_000;
+const MAX_READER_BYTES=1_500_000;
 const TIMEOUT_MS=12_000;
+const READER_TIMEOUT_MS=15_000;
 
 function isPublicHttpUrl(value:string){
   try{
@@ -45,7 +47,52 @@ async function readLimited(response:Response,maxBytes:number){
   return Buffer.concat(chunks.map(c=>Buffer.from(c)));
 }
 
-export type PageSnapshot={url:string;finalUrl:string;status:number;contentType:string;text:string;sha256:string;collectedAt:string};
+export type PageSnapshot={
+  url:string;
+  finalUrl:string;
+  status:number;
+  contentType:string;
+  text:string;
+  sha256:string;
+  collectedAt:string;
+  fetchMode?:"direct"|"reader-fallback";
+};
+
+async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
+  if(!isPublicHttpUrl(url))return null;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),READER_TIMEOUT_MS);
+  try{
+    const response=await fetch("https://r.jina.ai/"+url,{
+      redirect:"follow",
+      signal:controller.signal,
+      cache:"no-store",
+      headers:{
+        "User-Agent":"TRACY-PublicResearch/1.0",
+        "Accept":"text/plain,text/markdown;q=0.9"
+      }
+    });
+    if(!response.ok)return null;
+    const bytes=await readLimited(response,MAX_READER_BYTES);
+    if(!bytes||!bytes.length)return null;
+    const text=bytes.toString("utf8").replace(/\s+/g," ").trim().slice(0,240_000);
+    if(!text)return null;
+    return {
+      url,
+      finalUrl:url,
+      status:response.status,
+      contentType:"text/markdown; source=jina-reader",
+      text,
+      sha256:createHash("sha256").update(bytes).digest("hex"),
+      collectedAt:new Date().toISOString(),
+      fetchMode:"reader-fallback"
+    };
+  }catch{
+    return null;
+  }finally{
+    clearTimeout(timer);
+  }
+}
 
 export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
   if(!isPublicHttpUrl(url))return null;
@@ -53,15 +100,15 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
   try{
     const response=await fetch(url,{redirect:"follow",signal:controller.signal,cache:"no-store",headers:{"User-Agent":"TRACY-PublicResearch/1.0"}});
     const finalUrl=response.url||url;
-    if(!isPublicHttpUrl(finalUrl)||!response.ok)return null;
+    if(!isPublicHttpUrl(finalUrl)||!response.ok)return fetchReaderFallback(url);
 
     const contentType=response.headers.get("content-type")||"";
     const looksPdf=/application\/pdf/i.test(contentType)||/\.pdf(?:$|[?#])/i.test(finalUrl);
     const allowedText=/(text\/html|text\/plain|application\/xhtml\+xml)/i.test(contentType);
-    if(!looksPdf&&!allowedText)return null;
+    if(!looksPdf&&!allowedText)return fetchReaderFallback(url);
 
     const bytes=await readLimited(response,looksPdf?MAX_PDF_BYTES:MAX_HTML_BYTES);
-    if(!bytes||!bytes.length)return null;
+    if(!bytes||!bytes.length)return fetchReaderFallback(url);
 
     let text="";
     if(looksPdf){
@@ -69,12 +116,27 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
         const pdfParse=(await import("pdf-parse")).default;
         const parsed=await pdfParse(bytes);
         text=(parsed.text||"").replace(/\s+/g," ").trim().slice(0,220_000);
-      }catch{return null}
+      }catch{
+        return fetchReaderFallback(url);
+      }
     }else{
       text=textFromHtml(bytes.toString("utf8"));
     }
-    if(!text)return null;
+    if(!text)return fetchReaderFallback(url);
 
-    return {url,finalUrl,status:response.status,contentType:looksPdf?"application/pdf":contentType,text,sha256:createHash("sha256").update(bytes).digest("hex"),collectedAt:new Date().toISOString()};
-  }catch{return null}finally{clearTimeout(timer)}
+    return {
+      url,
+      finalUrl,
+      status:response.status,
+      contentType:looksPdf?"application/pdf":contentType,
+      text,
+      sha256:createHash("sha256").update(bytes).digest("hex"),
+      collectedAt:new Date().toISOString(),
+      fetchMode:"direct"
+    };
+  }catch{
+    return fetchReaderFallback(url);
+  }finally{
+    clearTimeout(timer);
+  }
 }
