@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { SerperWebConnector } from "@/lib/connectors/serper";
 import type { CollectedResult } from "@/lib/connectors/types";
+import { extractEvidenceEntities } from "@/lib/evidence-extraction";
 
 const connector = new SerperWebConnector();
 const MAX_SEARCHES_PER_RUN = 4;
@@ -75,9 +76,11 @@ export async function collectPublicSources(caseId:string,query:string){
     added++;
   }
 
+  const extraction=await extractEvidenceEntities(caseId);
+
   await db.event.create({data:{caseId,title:"Identity-aware discovery run",
     description:`Ran ${searches.length}/${MAX_SEARCHES_PER_RUN} allowed searches; found ${uniqueResults.length} unique results, preserved ${added}, filtered ${noise} low-relevance results, skipped ${skipped} duplicates.`,
     occurredAt:new Date(),metadata:{query,searches,searchCount:searches.length,resultCount:uniqueResults.length,added,noise,skipped,connector:connector.id}
   }});
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:searches,noise};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:searches,noise,extraction};
 }
