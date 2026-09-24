@@ -73,7 +73,7 @@ export async function extractEvidenceEntities(caseId:string){
     if(kind==="PUBLIC_SEARCH_RESULT"){
       for(const raw of [...new Set(text.match(PHONE)??[])].slice(0,10)){
         const canonical=canonicalPhone(raw);
-        if(canonical&&nearIdentity(text,raw,query,140)){
+        if(canonical&&(nearIdentity(text,raw,query,220)||sourceTitleMatchesIdentity)){
           found.push({type:"PHONE",raw:raw.trim(),canonical});
         }
       }
@@ -131,7 +131,7 @@ export async function extractEvidenceEntities(caseId:string){
   await db.event.create({data:{
     caseId,
     title:"Evidence extraction run",
-    description:"Extracted "+entitiesCreated+" context-supported identifiers and "+linksCreated+" evidence links. Phone numbers are only accepted from search-result text when the searched identity appears nearby.",
+    description:"Extracted "+entitiesCreated+" context-supported identifiers and "+linksCreated+" evidence links. Public contacts are accepted only when the searched identity is nearby or the source title identifies the person.",
     occurredAt:new Date(),
     metadata:{entitiesCreated,linksCreated,removedUnsafeEntities:staleIds.length,phoneExtraction:"context-only",domainBodyExtraction:"disabled"}
   }});
