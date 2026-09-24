@@ -13,16 +13,16 @@ export function detectSearchKind(input:string):SearchPlan["kind"]{
 function variants(q:string){const p=q.trim().split(/\s+/).filter(Boolean);return p.length>=2?unique([q,[...p].reverse().join(" ")]):[q]}
 export function buildSearchPlan(input:string):SearchPlan{
  const q=input.trim(),kind=detectSearchKind(q);
- if(kind!=="PERSON")return {kind,queries:unique([q,q+" profile",q+" document",q+" contact"])};
+ if(kind!=="PERSON")return {kind,queries:unique([q,'"'+q+'"',q+" profile",q+" document PDF",q+" contact"])};
  const v=variants(q),a=v[0],b=v[1]||a;
  return {kind,queries:unique([
-  a,
-  b,
-  a+" universite faculte etudiant liste resultat inscription",
-  b+" universite faculte etudiant liste resultat inscription",
-  a+" FSJES FSJP ENCG EST faculte",
-  b+" FSJES FSJP ENCG EST faculte",
-  a+" CV rapport memoire soutenance conference",
-  b+" PDF liste etudiants resultats concours"
+  '"'+a+'"',
+  '"'+b+'"',
+  a+" student list university faculty inscription result",
+  b+" etudiant liste universite faculte inscription resultat",
+  a+" PDF document CV memoire soutenance",
+  b+" PDF liste etudiants resultats concours",
+  a+" Scribd Academia ResearchGate",
+  a+" FSJES FSJP ENCG EST universite maroc"
  ])};
 }
