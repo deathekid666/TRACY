@@ -75,6 +75,9 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
   const accounts=visibleSources.filter(s=>sourceCategory(s)==="PUBLIC_ACCOUNT");
   const documents=visibleSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
+  const allAcademicSources=investigation.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
+  const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
+  const academicCandidateSources=allAcademicSources.filter(s=>!academicRecordSourceIds.has(s.id));
   const professional=visibleSources.filter(s=>sourceCategory(s)==="PROFESSIONAL"||/linkedin|zoominfo|career|employer/i.test((s.title??"")+" "+s.url));
 
   const photos=Array.from(new Map(visibleSources.map(s=>{
@@ -160,13 +163,14 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{photos.map(p=><a key={p.image} href={p.source.url} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-slate-800 bg-slate-900"><img src={p.image} alt="" className="aspect-square w-full object-cover transition group-hover:scale-[1.03]"/><div className="truncate px-2 py-2 text-[10px] text-slate-500">{p.source.provider||"Public source"}</div></a>)}</div>
           </section>}
 
-          {academicRecords.length>0&&<section className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5">
+          <section className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><div className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-cyan-300"/><h2 className="font-medium">University & academic records</h2></div><p className="mt-1 text-xs text-slate-500">Structured only from public records where the searched identity appears in the source itself.</p></div>
-              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[.06] px-3 py-1 text-[10px] uppercase tracking-wider text-cyan-300">{academicRecords.length} matched record{academicRecords.length===1?"":"s"}</span>
+              <div><div className="flex items-center gap-2"><GraduationCap className="h-5 w-5 text-cyan-300"/><h2 className="font-medium">University & academic records</h2></div><p className="mt-1 text-xs text-slate-500">Confirmed records and unverified academic candidates are both shown. Candidate status means TRACY found the source through an academic name search but has not yet verified the identity inside the document.</p></div>
+              <div className="flex gap-2 text-[10px] uppercase tracking-wider"><span className="rounded-full border border-emerald-400/20 bg-emerald-400/[.06] px-3 py-1 text-emerald-300">{academicRecords.length} structured</span><span className="rounded-full border border-amber-400/20 bg-amber-400/[.06] px-3 py-1 text-amber-300">{academicCandidateSources.length} candidates</span></div>
             </div>
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">{academicRecords.map((record,i)=><article key={record.sourceId+"-"+i} className="rounded-2xl border border-slate-800 bg-slate-900/35 p-4">
-              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-semibold uppercase tracking-[.16em] text-cyan-300">{record.institution||"Academic public record"}</div><div className="mt-2 line-clamp-2 text-sm font-medium">{record.sourceTitle}</div></div><span className="shrink-0 text-[10px] text-slate-600">{record.confidence}%</span></div>
+
+            {academicRecords.length>0&&<div className="mt-5 grid gap-4 lg:grid-cols-2">{academicRecords.map((record,i)=><article key={record.sourceId+"-"+i} className="rounded-2xl border border-emerald-400/15 bg-slate-900/35 p-4">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-semibold uppercase tracking-[.16em] text-emerald-300">{record.institution||"Academic public record"}</div><div className="mt-2 line-clamp-2 text-sm font-medium">{record.sourceTitle}</div></div><span className="shrink-0 text-[10px] text-slate-600">{record.confidence}%</span></div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 {record.academicYear&&<AcademicField label="Academic year" value={record.academicYear}/>}
                 {record.semester&&<AcademicField label="Semester" value={record.semester}/>}
@@ -176,8 +180,16 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
                 {record.studentRecordId&&<AcademicField label="Public student record ID" value={record.studentRecordId}/>}
               </div>
               <a href={record.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-xs text-cyan-300">Open supporting source <ExternalLink className="h-3 w-3"/></a>
-            </article>)}</div>
-          </section>}
+            </article>)}</div>}
+
+            {academicCandidateSources.length>0&&<div className="mt-5">
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[.18em] text-amber-300">Academic candidates — visible, not confirmed</div>
+              <div className="grid gap-3 lg:grid-cols-2">{academicCandidateSources.slice(0,16).map(source=>{const m=meta(source.metadata);const d=decision(source);return <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="rounded-xl border border-amber-400/10 bg-amber-400/[.025] p-3 hover:border-amber-400/25"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="line-clamp-2 text-sm">{source.title||source.url}</div><div className="mt-1 text-[10px] text-slate-600">{source.provider||"SOURCE"} · {text(m.discoveryQuery)||"academic search"}</div></div><span className="shrink-0 rounded-full border border-amber-500/30 px-2 py-1 text-[9px] uppercase tracking-wider text-amber-300">{d}</span></div>{text(m.curatedReason)&&<div className="mt-2 line-clamp-2 text-[10px] text-slate-500">{text(m.curatedReason)}</div>}</a>})}</div>
+              {academicCandidateSources.length>16&&<div className="mt-3 text-xs text-slate-500">+ {academicCandidateSources.length-16} more academic candidates in Sources / Report.</div>}
+            </div>}
+
+            {!academicRecords.length&&!academicCandidateSources.length&&<div className="mt-5 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No academic source has been gathered in this case yet. Run Quick or Deep scan; academic searches are now part of both.</div>}
+          </section>
 
           <section className="grid gap-6 lg:grid-cols-2">
             <DossierSection title="Social & public accounts" icon={AtSign} items={accounts.slice(0,8)} caseId={id}/>
