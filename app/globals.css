@@ -1,2 +1,14 @@
 @import "tailwindcss";
-:root{color-scheme:dark;--bg:#071018;--text:#e8f0f5}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top right,rgba(88,214,255,.09),transparent 28%),var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}a{color:inherit;text-decoration:none}
+:root{color-scheme:dark;--bg:#05090d;--text:#eef5f7}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif}a{color:inherit;text-decoration:none}
+.search-home{min-height:100vh;display:grid;place-items:center;padding:32px;background:radial-gradient(circle at 50% 36%,rgba(38,183,218,.12),transparent 28%),linear-gradient(180deg,#071016 0%,#05090d 60%)}
+.search-home-inner{width:min(860px,100%);display:flex;flex-direction:column;align-items:center}
+.brand-mark{font-size:15px;font-weight:800;letter-spacing:.5em;color:#7ce8ff;margin-bottom:28px}
+.search-title{font-size:clamp(42px,7vw,76px);line-height:.98;letter-spacing:-.055em;text-align:center;margin:0;font-weight:700}
+.search-subtitle{max-width:690px;text-align:center;color:#8796a1;font-size:17px;line-height:1.7;margin:24px 0 38px}
+.search-shell{display:flex;width:100%;padding:7px;border:1px solid #26343d;border-radius:22px;background:rgba(12,20,26,.92);box-shadow:0 24px 80px rgba(0,0,0,.38),0 0 0 1px rgba(124,232,255,.025)}
+.search-shell:focus-within{border-color:#3b8fa1;box-shadow:0 24px 80px rgba(0,0,0,.4),0 0 0 3px rgba(76,200,225,.07)}
+.search-input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:#f4fbfd;padding:18px 20px;font-size:18px}.search-input::placeholder{color:#596974}
+.search-button{border:0;border-radius:15px;background:#dff9ff;color:#071014;padding:0 26px;font-size:15px;font-weight:750;cursor:pointer}.search-button:disabled{opacity:.42;cursor:not-allowed}
+.search-hints{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:24px}.search-hints span{border:1px solid #1d2a31;border-radius:999px;padding:7px 10px;color:#60717b;font-size:10px;font-weight:700;letter-spacing:.13em}
+.search-note{margin-top:52px;color:#45545d;font-size:12px;text-align:center}
+@media(max-width:640px){.search-home{padding:22px}.search-subtitle{font-size:15px}.search-shell{border-radius:18px}.search-input{font-size:16px;padding:15px 12px}.search-button{padding:0 17px}.search-title{font-size:46px}}
