@@ -316,7 +316,10 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
   const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
-  const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds,mode==="quick"?4:12);
+  const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
+  const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
+  const firstEnrichmentIds=[...new Set([...first.sourceIds,...staleEnrichmentIds])];
+  const firstEnrichment=await enrichPublicSources(caseId,firstEnrichmentIds,mode==="quick"?4:12);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const usernameEntities=await db.entity.findMany({
@@ -330,6 +333,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const emptyPlatformRun={results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
   const platformRun1=mode==="deep"&&plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
   const platform1=await preserve(caseId,query,platformRun1.results.filter(r=>r.classification!=="NOISE"),false);
+  const platformEnrichment1=mode==="deep"&&platform1.sourceIds.length?await enrichPublicSources(caseId,platform1.sourceIds,8):{attempted:0,fetched:0,failed:0};
   const platformExtraction1=platform1.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   const usernameEntitiesAfterRound1=await db.entity.findMany({
@@ -343,6 +347,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
 
   const platformRun2=mode==="deep"&&plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
   const platform2=await preserve(caseId,query,platformRun2.results.filter(r=>r.classification!=="NOISE"),false);
+  const platformEnrichment2=mode==="deep"&&platform2.sourceIds.length?await enrichPublicSources(caseId,platform2.sourceIds,6):{attempted:0,fetched:0,failed:0};
   const platformExtraction2=platform2.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   const pivotQueries=mode==="deep"?(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q)):[];
@@ -373,8 +378,8 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     caseId,title:"Deep public-footprint discovery",
     description:`${mode==="quick"?"Quick":"Deep"} scan used ${serperCalls} rate-limited public-web searches; ${failedSerperCalls} calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{mode,query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation}
+    metadata:{mode,query,inputKind:plan.kind,initialQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation}
   }});
 
-  return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
+  return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,enrichment:{first:firstEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
 }
