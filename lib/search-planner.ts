@@ -13,7 +13,7 @@ export function detectSearchKind(input:string):SearchPlan["kind"]{
 }
 
 export function buildSearchPlan(input:string):SearchPlan{
-  const q=input.trim(),kind=detectSearchKind(q),exact=`"${q}"`;
+  const q=input.trim(),kind=detectSearchKind(q),exact=q;
   const byKind:Record<SearchPlan["kind"],string[]>={
     PERSON:[
       q,
