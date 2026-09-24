@@ -14,7 +14,7 @@ export function CollectSources({ caseId, defaultQuery }: { caseId: string; defau
     const body=await res.json();
     setBusy(false);
     if(!res.ok){setMessage(body.error??"Collection failed");return;}
-    setMessage(`Added ${body.count} public discovery sources`);
+    setMessage(`Found ${body.found ?? body.count} · saved ${body.count} · duplicates ${body.skipped ?? 0}`);
     router.refresh();
   }
 
