@@ -13,21 +13,22 @@ export function detectSearchKind(input:string):SearchPlan["kind"]{
 }
 
 export function buildSearchPlan(input:string):SearchPlan{
-  const q=input.trim(); const kind=detectSearchKind(q); const exact=`"${q}"`;
+  const q=input.trim(),kind=detectSearchKind(q),exact=`"${q}"`;
   const byKind:Record<SearchPlan["kind"],string[]>={
     PERSON:[
-      q,exact,
-      `${exact} (email OR contact OR phone)`,
-      `${exact} (profile OR bio OR CV OR resume)`,
-      `${exact} filetype:pdf`,
-      `${exact} (LinkedIn OR GitHub OR Facebook OR Instagram OR X OR Twitter OR Pinterest)`,
-      `${exact} (company OR employer OR organization OR conference OR publication)`
+      q,
+      exact,
+      `${exact} email contact phone`,
+      `${exact} profile bio CV resume`,
+      `${exact} PDF`,
+      `${exact} LinkedIn GitHub Facebook Instagram Twitter Pinterest`,
+      `${exact} company employer organization conference publication`
     ],
-    EMAIL:[exact,`${exact} profile`,`${exact} filetype:pdf`,`${exact} (GitHub OR forum OR contact)`],
-    PHONE:[exact,`${exact} contact`,`${exact} profile`,`${exact} filetype:pdf`],
-    USERNAME:[q,exact,`${exact} (GitHub OR Reddit OR Instagram OR Facebook OR X OR Twitter OR Pinterest)`,`${exact} profile`],
-    DOMAIN:[q,`site:${q.replace(/^https?:\/\//i,"").split("/")[0]}`,`${exact} contact`,`${exact} filetype:pdf`],
-    GENERAL:[q,exact,`${exact} profile`,`${exact} filetype:pdf`]
+    EMAIL:[exact,`${exact} profile`,`${exact} PDF`,`${exact} GitHub forum contact`],
+    PHONE:[exact,`${exact} contact`,`${exact} profile`,`${exact} PDF`],
+    USERNAME:[q,exact,`${exact} GitHub Reddit Instagram Facebook Twitter Pinterest`,`${exact} profile`],
+    DOMAIN:[q,`${q.replace(/^https?:\/\//i,"").split("/")[0]} pages`,`${exact} contact`,`${exact} PDF`],
+    GENERAL:[q,exact,`${exact} profile`,`${exact} PDF`]
   };
   return {kind,queries:unique(byKind[kind])};
 }
