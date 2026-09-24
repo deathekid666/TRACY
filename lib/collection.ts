@@ -5,6 +5,7 @@ import { extractEvidenceEntities } from "@/lib/evidence-extraction";
 import { enrichPublicSources } from "@/lib/source-enrichment";
 import { buildSearchPlan } from "@/lib/search-planner";
 import { getPublicPivots } from "@/lib/public-pivots";
+import { validateCandidateSources } from "@/lib/source-validation";
 
 const connector=new SerperWebConnector();
 const MAX_INITIAL_SEARCHES=8;
@@ -81,24 +82,27 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
-  let added=0,skipped=0,noise=0;const sourceIds:string[]=[];
+  let added=0,skipped=0,noise=0,candidates=0;const sourceIds:string[]=[];
   for(const result of unique){
-    if(result.classification==="NOISE"){noise++;continue}
+    const candidate=result.classification==="NOISE"&&(isDocumentLike(result)||isInstitutionLike(result));
+    if(result.classification==="NOISE"&&!candidate){noise++;continue}
+    if(candidate)candidates++;
+    const storedClassification=candidate?"CANDIDATE":result.classification;
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists){skipped++;continue}
     const source=await db.source.create({data:{
       caseId,url:result.url,title:result.title,provider:result.provider,
-      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result)}
+      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:storedClassification,reasons:result.reasons,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result)}
     }});
     sourceIds.push(source.id);
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
       observedAt:result.observedAt?new Date(result.observedAt):new Date(),
-      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,identityScore:result.score,classification:result.classification,reasons:result.reasons}
+      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,identityScore:result.score,classification:storedClassification,reasons:result.reasons}
     }});
     added++;
   }
-  return {unique,added,skipped,noise,sourceIds};
+  return {unique,added,skipped,noise,candidates,sourceIds};
 }
 
 export async function collectPublicSources(caseId:string,query:string){
@@ -107,12 +111,14 @@ export async function collectPublicSources(caseId:string,query:string){
   const firstRun=await runQueries(query,initialQueries,true);
   const first=await preserve(caseId,query,firstRun.results);
   const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
+  const firstValidation=await validateCandidateSources(caseId,first.sourceIds,query);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const pivotQueries=(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q));
-  let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,sourceIds:[] as string[]};
+  let second={unique:[] as Ranked[],added:0,skipped:0,noise:0,candidates:0,sourceIds:[] as string[]};
   let secondCalls=0;
   let secondEnrichment={attempted:0,fetched:0,failed:0};
+  let secondValidation={validated:0,rejected:0};
   let secondExtraction={entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   if(pivotQueries.length){
@@ -120,6 +126,7 @@ export async function collectPublicSources(caseId:string,query:string){
     secondCalls=pivotRun.calls;
     second=await preserve(caseId,query,pivotRun.results);
     secondEnrichment=await enrichPublicSources(caseId,second.sourceIds);
+    secondValidation=await validateCandidateSources(caseId,second.sourceIds,query);
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
@@ -127,15 +134,17 @@ export async function collectPublicSources(caseId:string,query:string){
   const finalByUrl=new Map<string,Ranked>();
   for(const r of all){const prev=finalByUrl.get(r.url);if(!prev||r.score>prev.score)finalByUrl.set(r.url,r)}
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
-  const added=first.added+second.added,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
+  const rejectedCandidates=firstValidation.rejected+secondValidation.rejected;
+  const validatedCandidates=firstValidation.validated+secondValidation.validated;
+  const added=first.added+second.added-rejectedCandidates,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
   const serperCalls=firstRun.calls+secondCalls;
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
-    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
+    description:`Used ${serperCalls} paginated public-web searches across name variants and institutional/document lanes; preserved ${added} new sources, validated ${validatedCandidates} document candidates, rejected ${rejectedCandidates} unmatched candidates, filtered ${noise} low-relevance results and skipped ${skipped} duplicates.`,
     occurredAt:new Date(),
-    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,firstEnrichment,secondEnrichment,firstExtraction,secondExtraction}
+    metadata:{query,inputKind:plan.kind,initialQueries,pivotQueries,serperCalls,added,noise,skipped,validatedCandidates,rejectedCandidates,firstEnrichment,secondEnrichment,firstValidation,secondValidation,firstExtraction,secondExtraction}
   }});
 
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...pivotQueries],noise,serperCalls,validatedCandidates,rejectedCandidates,enrichment:{first:firstEnrichment,second:secondEnrichment},extraction:{first:firstExtraction,second:secondExtraction}};
 }
