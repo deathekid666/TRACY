@@ -127,7 +127,7 @@ export async function curateSources(caseId:string){
     .filter(Boolean);
 
   const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string}>();
-  const ambiguous:Array<{id:string;url:string;title:string;snippet:string;deterministic:string}>=[];
+  const aiCandidates:Array<{id:string;url:string;title:string;snippet:string;deterministic:string}>=[];
 
   for(const source of investigation.sources){
     const m=(source.metadata??{}) as Record<string,unknown>;
@@ -149,25 +149,27 @@ export async function curateSources(caseId:string){
     const category=categoryFrom(source);
     preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score,category,snippet});
 
-    if(decision==="REVIEW"&&ambiguous.length<28){
-      ambiguous.push({
+    if(decision!=="REJECT"&&aiCandidates.length<36){
+      aiCandidates.push({
         id:source.id,
         url:source.url,
         title:source.title||source.url,
-        snippet:snippet.slice(0,700),
-        deterministic:reasons.join("; ")
+        snippet:snippet.slice(0,900),
+        deterministic:decision+" — "+(reasons.join("; ")||"identity-supported source")
       });
     }
   }
 
-  const ai=await aiReview(personName,ambiguous);
+  const ai=await aiReview(personName,aiCandidates);
   const aiById=new Map(ai.decisions.map(d=>[d.sourceId,d]));
 
   let kept=0,review=0,rejected=0;
+  const finalDecisionById=new Map<string,CuratedDecision>();
   const updates=investigation.sources.map(source=>{
     const pre=preliminary.get(source.id)!;
     const aiDecision=aiById.get(source.id);
     const decision=aiDecision?.decision??pre.decision;
+    finalDecisionById.set(source.id,decision);
     if(decision==="KEEP")kept++;
     else if(decision==="REVIEW")review++;
     else rejected++;
@@ -190,6 +192,38 @@ export async function curateSources(caseId:string){
     await Promise.all(updates.slice(i,i+25));
   }
 
+  const deterministicFacts:AiFact[]=[];
+  const seenBirth=new Set<string>();
+  const birthPatterns=[
+    /(?:date of birth|born(?: on)?|birthday)\s*[:\-]?\s*([0-3]?\d[\/\-.][01]?\d[\/\-.](?:19|20)\d{2})/i,
+    /(?:date of birth|born(?: on)?|birthday)\s*[:\-]?\s*([A-Za-z]+\s+[0-3]?\d,?\s+(?:19|20)\d{2})/i,
+    /(?:date of birth|born(?: on)?|birthday)\s*[:\-]?\s*([0-3]?\d\s+[A-Za-z]+\s+(?:19|20)\d{2})/i,
+    /(?:né|née)(?:\s+le)?\s*[:\-]?\s*([0-3]?\d[\/\-.][01]?\d[\/\-.](?:19|20)\d{2})/i
+  ];
+
+  for(const source of investigation.sources){
+    if(finalDecisionById.get(source.id)!=="KEEP")continue;
+    const body=[source.title||"",...source.evidence.map(e=>e.content||"")].join(" ").slice(0,12000);
+    for(const pattern of birthPatterns){
+      const match=body.match(pattern);
+      const value=match?.[1]?.trim();
+      if(value&&!seenBirth.has(value.toLowerCase())){
+        seenBirth.add(value.toLowerCase());
+        deterministicFacts.push({type:"BIRTH_DATE",value,confidence:82,sourceIds:[source.id]});
+        break;
+      }
+    }
+  }
+
+  const factMap=new Map<string,AiFact>();
+  for(const fact of [...deterministicFacts,...ai.facts]){
+    if(!fact||typeof fact.type!=="string"||typeof fact.value!=="string"||!fact.value.trim())continue;
+    const key=fact.type+"|"+norm(fact.value);
+    const previous=factMap.get(key);
+    if(!previous||fact.confidence>previous.confidence)factMap.set(key,fact);
+  }
+  const facts=[...factMap.values()];
+
   await db.event.create({data:{
     caseId,
     title:"Source curation",
@@ -199,9 +233,9 @@ export async function curateSources(caseId:string){
       kept,review,rejected,
       aiEnabled:ai.enabled,
       aiDecisionCount:ai.decisions.length,
-      facts:ai.facts
+      facts
     }
   }});
 
-  return {kept,review,rejected,aiEnabled:ai.enabled,facts:ai.facts};
+  return {kept,review,rejected,aiEnabled:ai.enabled,facts};
 }
