@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { SerperWebConnector } from "@/lib/connectors/serper";
 import type { CollectedResult } from "@/lib/connectors/types";
 import { extractEvidenceEntities } from "@/lib/evidence-extraction";
+import { enrichPublicSources } from "@/lib/source-enrichment";
 
 const connector = new SerperWebConnector();
 const MAX_SEARCHES_PER_RUN = 4;
@@ -59,6 +60,7 @@ export async function collectPublicSources(caseId:string,query:string){
   const all=[...rankedPrimary.map(r=>({...r,discoveryQuery:query})),...extra.flat().map(r=>({...r,...scoreResult(query,r)})).map(r=>({...r,classification:classify(r.score)}))];
   const uniqueResults=[...new Map(all.map(r=>[r.url,r])).values()].sort((a,b)=>b.score-a.score);
   let added=0,skipped=0,noise=0;
+  const newSourceIds:string[]=[];
 
   for(const result of uniqueResults){
     if(result.classification==="NOISE"){noise++;continue;}
@@ -68,6 +70,7 @@ export async function collectPublicSources(caseId:string,query:string){
       caseId,url:result.url,title:result.title,provider:result.provider,
       metadata:{query,discoveryQuery:result.discoveryQuery,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons}
     }});
+    newSourceIds.push(source.id);
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public Google search result",
       observedAt:result.observedAt?new Date(result.observedAt):new Date(),
@@ -76,11 +79,12 @@ export async function collectPublicSources(caseId:string,query:string){
     added++;
   }
 
+  const enrichment=await enrichPublicSources(caseId,newSourceIds);
   const extraction=await extractEvidenceEntities(caseId);
 
   await db.event.create({data:{caseId,title:"Identity-aware discovery run",
     description:`Ran ${searches.length}/${MAX_SEARCHES_PER_RUN} allowed searches; found ${uniqueResults.length} unique results, preserved ${added}, filtered ${noise} low-relevance results, skipped ${skipped} duplicates.`,
     occurredAt:new Date(),metadata:{query,searches,searchCount:searches.length,resultCount:uniqueResults.length,added,noise,skipped,connector:connector.id}
   }});
-  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:searches,noise,extraction};
+  return {results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:searches,noise,enrichment,extraction};
 }
