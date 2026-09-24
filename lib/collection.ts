@@ -12,10 +12,10 @@ import { InternetArchiveConnector } from "@/lib/connectors/internet-archive";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
-const MAX_INITIAL_SEARCHES=14;
+const MAX_INITIAL_SEARCHES=20;
 const MAX_RECURSIVE_SEARCHES=4;
-const MAX_SERPER_CALLS=18;
-const MAX_DEEP_DOCUMENT_CHECKS=18;
+const MAX_SERPER_CALLS=26;
+const MAX_DEEP_DOCUMENT_CHECKS=24;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
 function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
@@ -64,6 +64,15 @@ function hasIdentityEvidence(query:string,result:CollectedResult){
 }
 function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|student|students|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours|scribd|academia|researchgate|drive\.google|docs\.google/.test(s)}
 function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
+function isAccountLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /profile|account|member|author|contributor|forum|community|user\b|github|reddit|medium|tumblr|twitch|instagram|facebook|linkedin|pinterest|threads\.net|tiktok/.test(s)}
+function isCommerceLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /payment|merchant|donation|donate|invoice|receipt|checkout|paypal|stripe|patreon|ko-fi|buymeacoffee|gofundme|crowdfunding|shop|store/.test(s)}
+function categoryFor(r:CollectedResult){
+  if(isCommerceLike(r))return "PUBLIC_COMMERCE";
+  if(isInstitutionLike(r))return "ACADEMIC";
+  if(isDocumentLike(r))return "DOCUMENT";
+  if(isAccountLike(r))return "PUBLIC_ACCOUNT";
+  return "GENERAL";
+}
 
 type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string;page:number};
 
@@ -138,6 +147,8 @@ async function runQueries(original:string,queries:string[],deep=true){
       const identityVisible=hasIdentityEvidence(original,result);
       if(identityVisible&&isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
       if(identityVisible&&isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal with identity evidence");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
+      if(identityVisible&&isAccountLike(result)){scored.score=Math.min(100,scored.score+10);scored.reasons.push("public account/profile signal")}
+      if(identityVisible&&isCommerceLike(result)){scored.score=Math.min(100,scored.score+8);scored.reasons.push("public commerce/payment-page signal")}
       if(!identityVisible){scored.score=0;scored.reasons.push("rejected: no identity evidence in result")}
       return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
     });
@@ -157,7 +168,7 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
     if(exists){skipped++;return}
     const source=await db.source.create({data:{
       caseId,url:result.url,title:result.title,provider:result.provider,
-      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result)}
+      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
     }});
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
@@ -175,7 +186,7 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
 
   for(const result of unique.filter(r=>r.classification!=="NOISE"))await saveResult(result);
 
-  const deepCandidates=unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r))).slice(0,MAX_DEEP_DOCUMENT_CHECKS);
+  const deepCandidates=unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,MAX_DEEP_DOCUMENT_CHECKS);
   const checks=await Promise.all(deepCandidates.map(async result=>{
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists)return {result,page:null,exists:true};
