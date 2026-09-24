@@ -52,7 +52,13 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const curationMeta=meta(curationEvent?.metadata);
   const facts=(Array.isArray(curationMeta.facts)?curationMeta.facts:[]) as AiFact[];
   const birthFact=facts.find(f=>f.type==="BIRTH_DATE");
-  const otherFacts=facts.filter(f=>f.type!=="BIRTH_DATE");
+  const aliases=facts.filter(f=>f.type==="ALIAS");
+  const nationalities=facts.filter(f=>f.type==="NATIONALITY");
+  const languages=facts.filter(f=>f.type==="LANGUAGE");
+  const factLocations=facts.filter(f=>f.type==="LOCATION");
+  const educationFacts=facts.filter(f=>f.type==="EDUCATION");
+  const employmentFacts=facts.filter(f=>f.type==="EMPLOYMENT");
+  const otherFacts=facts.filter(f=>!["BIRTH_DATE","ALIAS","NATIONALITY","LANGUAGE","LOCATION","EDUCATION","EMPLOYMENT"].includes(f.type));
 
   const visibleSources=investigation.sources.filter(s=>decision(s)!=="REJECT");
   const relevantSources=visibleSources.filter(s=>decision(s)==="KEEP");
@@ -127,8 +133,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <InfoCard title="Identity" icon={UserRound}>
               <FactRow label="Full name" value={person?.label||investigation.title} confidence="Primary"/>
               <FactRow label="Date of birth" value={birthFact?.value||"Not established from public evidence"} confidence={birthFact?`${birthFact.confidence}%`:"—"}/>
+              <FactRow label="Aliases" value={aliases.length?aliases.map(f=>f.value).join(" · "):"None established"} confidence={aliases.length?"Evidence linked":"—"}/>
               <FactRow label="Usernames" value={usernames.length?usernames.map(e=>"@"+(e.canonical||e.label).replace(/^@/,"")).join(" · "):"None established"} confidence={usernames.length?"Evidence linked":"—"}/>
-              <FactRow label="Locations" value={locations.length?locations.map(e=>e.label).join(" · "):"Not established"} confidence={locations.length?"Evidence linked":"—"}/>
+              <FactRow label="Nationality" value={nationalities.length?nationalities.map(f=>f.value).join(" · "):"Not established"} confidence={nationalities.length?"Evidence linked":"—"}/>
+              <FactRow label="Languages" value={languages.length?languages.map(f=>f.value).join(" · "):"Not established"} confidence={languages.length?"Evidence linked":"—"}/>
+              <FactRow label="Locations" value={locations.length?locations.map(e=>e.label).join(" · "):(factLocations.length?factLocations.map(f=>f.value).join(" · "):"Not established")} confidence={(locations.length||factLocations.length)?"Evidence linked":"—"}/>
             </InfoCard>
 
             <InfoCard title="Public contact exposure" icon={Mail}>
@@ -145,11 +154,11 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
 
           <section className="grid gap-6 lg:grid-cols-2">
             <DossierSection title="Social & public accounts" icon={AtSign} items={accounts.slice(0,8)} caseId={id}/>
-            <DossierSection title="Education & documents" icon={GraduationCap} items={documents.slice(0,8)} caseId={id}/>
+            <section className="space-y-6"><DossierSection title="Education & documents" icon={GraduationCap} items={documents.slice(0,8)} caseId={id}/>{educationFacts.length>0&&<FactList title="Education facts" facts={educationFacts}/>}</section>
           </section>
 
           <section className="grid gap-6 lg:grid-cols-2">
-            <DossierSection title="Professional footprint" icon={BriefcaseBusiness} items={professional.slice(0,8)} caseId={id}/>
+            <section className="space-y-6"><DossierSection title="Professional footprint" icon={BriefcaseBusiness} items={professional.slice(0,8)} caseId={id}/>{employmentFacts.length>0&&<FactList title="Employment facts" facts={employmentFacts}/>}</section>
             <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5">
               <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300"/><h2 className="font-medium">Extracted public facts</h2></div>
               <div className="mt-4 space-y-3">{otherFacts.length?otherFacts.slice(0,10).map((fact,i)=><div key={i} className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="flex items-center justify-between gap-3"><span className="text-[10px] font-semibold uppercase tracking-[.16em] text-violet-300">{fact.type.replaceAll("_"," ")}</span><span className="text-[10px] text-slate-600">{fact.confidence}%</span></div><div className="mt-2 text-sm">{fact.value}</div></div>):<p className="text-sm leading-6 text-slate-500">No additional structured facts have been established yet. When AI curation is configured, supported facts are extracted from retained evidence rather than guessed.</p>}</div>
@@ -202,3 +211,5 @@ function InfoCard({title,icon:Icon,children}:{title:string;icon:any;children:Rea
 function FactRow({label,value,confidence}:{label:string;value:string;confidence:string}){return <div className="grid gap-1 py-3 sm:grid-cols-[120px_1fr_auto] sm:items-start"><div className="text-xs text-slate-500">{label}</div><div className="text-sm leading-5">{value}</div><div className="text-[10px] uppercase tracking-wider text-slate-600">{confidence}</div></div>}
 function Exposure({label,found,detail}:{label:string;found:boolean;detail:string}){return <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/30 px-3 py-3"><div><div className="text-sm">{label}</div><div className="mt-1 text-[10px] text-slate-600">{detail}</div></div><span className={"h-2.5 w-2.5 rounded-full "+(found?"bg-amber-300":"bg-slate-700")}/></div>}
 function DossierSection({title,icon:Icon,items,caseId}:{title:string;icon:any;items:Array<{id:string;url:string;title:string|null;provider:string|null;metadata:unknown}>;caseId:string}){return <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5"><div className="flex items-center justify-between"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300"/><h2 className="font-medium">{title}</h2></div><Link href={`/cases/${caseId}/sources`} className="text-xs text-cyan-300">All →</Link></div><div className="mt-4 space-y-3">{items.length?items.map(s=>{const m=meta(s.metadata);return <a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-800 bg-slate-900/30 p-3 hover:border-cyan-400/20"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm">{s.title||s.url}</div><div className="mt-1 truncate text-[11px] text-slate-600">{s.provider||"SOURCE"}</div></div><span className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-[9px] uppercase tracking-wider text-slate-500">{String(m.curatedDecision??m.classification??"")}</span></div>{text(m.publishedAt)&&<div className="mt-2 text-[10px] text-slate-600">Released {dateLabel(m.publishedAt)}</div>}</a>}):<p className="text-sm text-slate-500">Nothing established in this section yet.</p>}</div></section>}
+
+function FactList({title,facts}:{title:string;facts:AiFact[]}){return <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5"><h3 className="font-medium">{title}</h3><div className="mt-3 space-y-2">{facts.map((fact,i)=><div key={i} className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"><div className="text-sm">{fact.value}</div><div className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">{fact.confidence}% · {fact.sourceIds.length} source{fact.sourceIds.length===1?"":"s"}</div></div>)}</div></section>}
