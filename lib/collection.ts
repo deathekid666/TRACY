@@ -42,8 +42,8 @@ function scoreResult(query:string,result:CollectedResult){
   return {score:Math.min(score,100),reasons};
 }
 function classify(score:number){return score>=70?"STRONG":score>=45?"POSSIBLE":"NOISE"}
-function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours/.test(s)}
-function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|etudiant|étudiant/.test(s)}
+function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|student|students|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours|scribd|academia|researchgate|drive\.google|docs\.google/.test(s)}
+function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
 
 type Ranked=CollectedResult&{score:number;reasons:string[];classification:string;discoveryQuery:string;page:number};
 
@@ -68,8 +68,9 @@ async function runQueries(original:string,queries:string[],deep=true){
     const results=await connector.searchPage(job.query,job.page);
     return results.map(result=>{
       const scored=scoreResult(original,result);
-      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal")}
-      if(isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal")}
+      const combined=result.title+" "+(result.snippet||"");
+      if(isDocumentLike(result)){scored.score=Math.min(100,scored.score+18);scored.reasons.push("document signal");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside document result")}}
+      if(isInstitutionLike(result)){scored.score=Math.min(100,scored.score+12);scored.reasons.push("institution signal");if(allTokensPresent(combined,tokens(original))&&scored.score<60){scored.score=60;scored.reasons.push("all identity tokens inside institutional result")}}
       return {...result,...scored,classification:classify(scored.score),discoveryQuery:job.query,page:job.page} as Ranked;
     });
   }));
@@ -77,7 +78,9 @@ async function runQueries(original:string,queries:string[],deep=true){
 }
 
 async function preserve(caseId:string,original:string,results:Ranked[]){
-  const unique=[...new Map(results.map(r=>[r.url,r])).values()].sort((a,b)=>b.score-a.score);
+  const byUrl=new Map<string,Ranked>();
+  for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
+  const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
   let added=0,skipped=0,noise=0;const sourceIds:string[]=[];
   for(const result of unique){
     if(result.classification==="NOISE"){noise++;continue}
@@ -121,7 +124,9 @@ export async function collectPublicSources(caseId:string,query:string){
   }
 
   const all=[...first.unique,...second.unique];
-  const uniqueResults=[...new Map(all.map(r=>[r.url,r])).values()].sort((a,b)=>b.score-a.score);
+  const finalByUrl=new Map<string,Ranked>();
+  for(const r of all){const prev=finalByUrl.get(r.url);if(!prev||r.score>prev.score)finalByUrl.set(r.url,r)}
+  const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
   const added=first.added+second.added,skipped=first.skipped+second.skipped,noise=first.noise+second.noise;
   const serperCalls=firstRun.calls+secondCalls;
 
