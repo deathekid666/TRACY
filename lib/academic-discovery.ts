@@ -8,6 +8,8 @@ export function buildAcademicQueries(name:string){
     '"'+reversed+'" université',
     '"'+clean+'" étudiant',
     '"'+reversed+'" étudiant',
+    'site:scribd.com "'+reversed+'"',
+    '"'+clean+'" ESB',
     '"'+clean+'" "année universitaire"',
     '"'+reversed+'" "année universitaire"',
     '"'+clean+'" filière',
@@ -16,9 +18,7 @@ export function buildAcademicQueries(name:string){
     '"'+reversed+'" semestre',
     '"'+clean+'" apogee',
     '"'+reversed+'" apogee',
-    'site:scribd.com "'+reversed+'"',
     'site:fichier-pdf.fr "'+reversed+'"',
-    'filetype:pdf "'+reversed+'" université',
-    '"'+clean+'" ESB'
+    'filetype:pdf "'+reversed+'" université'
   ])];
 }
