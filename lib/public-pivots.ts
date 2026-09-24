@@ -11,7 +11,7 @@ export async function getPublicPivots(caseId:string,original:string,limit=5){
     if(!value||value.toLowerCase()===original.trim().toLowerCase())continue;
     if(e.type==="USERNAME")out.push(`"${value.replace(/^@/,"")}"`);
     else if(e.type==="EMAIL")out.push(`"${value}"`);
-    else if(e.type==="DOMAIN")out.push(`site:${value.replace(/^https?:\/\//i,"").split("/")[0]}`);
+    else if(e.type==="DOMAIN")out.push(`"${value.replace(/^https?:\/\//i,"").split("/")[0]}"`);
     if(out.length>=limit)break;
   }
   return [...new Set(out)].slice(0,limit);
