@@ -36,6 +36,12 @@ export function buildSearchPlan(input:string):SearchPlan{
   return {kind,queries:unique([
     '"'+a+'"',
     '"'+b+'"',
+    '"'+a+'" profile account member user',
+    '"'+a+'" email contact',
+    '"'+a+'" phone telephone contact',
+    '"'+a+'" LinkedIn Instagram Facebook',
+    '"'+a+'" CV resume',
+    '"'+a+'" university student',
     'site:scribd.com "'+a+'"',
     'site:scribd.com "'+b+'"',
     'filetype:pdf "'+a+'"',
@@ -47,12 +53,8 @@ export function buildSearchPlan(input:string):SearchPlan{
     '"'+a+'" inscription résultat concours',
     '"'+b+'" inscription résultat concours',
     '"'+a+'" université FSJES faculté',
-    '"'+a+'" CV PDF',
-    '"'+a+'" profile account member user',
-    '"'+b+'" profile account member user',
-    '"'+a+'" email contact',
-    '"'+a+'" phone telephone contact',
     '"'+a+'" payment merchant donation invoice receipt',
-    '"'+a+'" forum author contributor'
+    '"'+a+'" forum author contributor',
+    '"'+b+'" profile account member user'
   ])};
 }
