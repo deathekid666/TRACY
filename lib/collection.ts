@@ -310,7 +310,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"||m.classification==="CANDIDATE"}).map(s=>s.id);
   if(staleIds.length){await db.evidence.deleteMany({where:{sourceId:{in:staleIds}}});await db.source.deleteMany({where:{id:{in:staleIds}}});}
   const plan=buildSearchPlan(query);
-  const initialLimit=mode==="quick"?6:MAX_INITIAL_SEARCHES;
+  const initialLimit=mode==="quick"?8:MAX_INITIAL_SEARCHES;
   const initialQueries=plan.queries.slice(0,initialLimit);
   const firstRun=await runQueries(query,initialQueries,mode==="deep");
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
