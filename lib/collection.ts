@@ -254,7 +254,7 @@ async function runQueries(original:string,queries:string[],deep=true){
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
 }
 
-async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true){
+async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true,maxDeepChecks=MAX_DEEP_DOCUMENT_CHECKS){
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
@@ -284,7 +284,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 
   for(const result of unique.filter(r=>r.classification!=="NOISE"))await saveResult(result);
 
-  const deepCandidates=deepValidation?unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,MAX_DEEP_DOCUMENT_CHECKS):[];
+  const deepCandidates=deepValidation?unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,maxDeepChecks):[];
   const checks=await Promise.all(deepCandidates.map(async result=>{
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists)return {result,page:null,exists:true};
@@ -319,10 +319,11 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
   const academicQueries=plan.kind==="PERSON"?buildAcademicQueries(query).slice(0,mode==="quick"?5:16):[];
   const academicRun=academicQueries.length?await runQueries(query,academicQueries,false):{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
-  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults,...academicRun.results],mode==="deep");
+  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
+  const academic=await preserve(caseId,query,academicRun.results,true,mode==="quick"?6:MAX_DEEP_DOCUMENT_CHECKS);
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
   const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
-  const firstEnrichmentIds=[...new Set([...first.sourceIds,...staleEnrichmentIds])];
+  const firstEnrichmentIds=[...new Set([...first.sourceIds,...academic.sourceIds,...staleEnrichmentIds])];
   const firstEnrichment=await enrichPublicSources(caseId,firstEnrichmentIds,mode==="quick"?4:12);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
@@ -368,12 +369,12 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
-  const all=[...first.unique,...platform1.unique,...platform2.unique,...second.unique];
+  const all=[...first.unique,...academic.unique,...platform1.unique,...platform2.unique,...second.unique];
   const finalByUrl=new Map<string,Ranked>();
   for(const r of all){const prev=finalByUrl.get(r.url);if(!prev||r.score>prev.score)finalByUrl.set(r.url,r)}
   const uniqueResults=[...finalByUrl.values()].sort((a,b)=>b.score-a.score);
-  const added=first.added+platform1.added+platform2.added+second.added,skipped=first.skipped+platform1.skipped+platform2.skipped+second.skipped,noise=first.noise+platform1.noise+platform2.noise+second.noise;
-  const deepValidated=first.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
+  const added=first.added+academic.added+platform1.added+platform2.added+second.added,skipped=first.skipped+academic.skipped+platform1.skipped+platform2.skipped+second.skipped,noise=first.noise+academic.noise+platform1.noise+platform2.noise+second.noise;
+  const deepValidated=first.deepValidated+academic.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+academic.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
   const serperCalls=firstRun.calls+academicRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
   const failedSerperCalls=(firstRun.failedCalls??0)+(academicRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
   const curation=await curateSources(caseId,mode==="deep");
@@ -383,7 +384,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     caseId,title:"Deep public-footprint discovery",
     description:`${mode==="quick"?"Quick":"Deep"} scan used ${serperCalls} rate-limited public-web searches; ${failedSerperCalls} calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{mode,query,inputKind:plan.kind,initialQueries,academicQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
+    metadata:{mode,query,inputKind:plan.kind,initialQueries,academicQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
   }});
 
   return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
