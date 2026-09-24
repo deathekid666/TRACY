@@ -22,11 +22,12 @@ export async function validateCandidateSources(caseId:string,sourceIds:string[],
     where:{caseId,id:{in:sourceIds}},
     include:{evidence:{select:{id:true,title:true,content:true,metadata:true}}}
   });
-  let validated=0,rejected=0;
+  let validated=0,rejected=0,pending=0;
 
   for(const source of sources){
     const metadata=(source.metadata??{}) as Record<string,any>;
     if(metadata.classification!=="CANDIDATE")continue;
+    const pageCaptures=source.evidence.filter(e=>{const m=(e.metadata??{}) as Record<string,unknown>;return m.kind==="PUBLIC_PAGE_CAPTURE"});
     const searchable=source.evidence.map(e=>[e.title,e.content].filter(Boolean).join(" ")).join(" ");
     if(identityHit(searchable,query)){
       const reasons=Array.isArray(metadata.reasons)?metadata.reasons:[];
@@ -35,11 +36,14 @@ export async function validateCandidateSources(caseId:string,sourceIds:string[],
         data:{metadata:{...metadata,classification:"POSSIBLE",identityScore:Math.max(Number(metadata.identityScore)||0,60),candidateValidated:true,reasons:[...reasons,"identity verified in fetched/source content"]}}
       });
       validated++;
+    }else if(pageCaptures.length===0){
+      await db.source.update({where:{id:source.id},data:{metadata:{...metadata,classification:"UNVERIFIED",candidateValidated:false,validationReason:"page unavailable for content validation"}}});
+      pending++;
     }else{
       await db.evidence.deleteMany({where:{sourceId:source.id}});
       await db.source.delete({where:{id:source.id}});
       rejected++;
     }
   }
-  return {validated,rejected};
+  return {validated,rejected,pending};
 }
