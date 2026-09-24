@@ -30,7 +30,9 @@ export class CrossrefConnector implements PublicConnector{
       const snippet=[matched,container,year?String(year):"",item.DOI].filter(Boolean).join(" — ");
       const target=item.URL||(item.DOI?"https://doi.org/"+item.DOI:"");
       if(!target)return [];
-      return [{provider:"Crossref",title,url:target,snippet,observedAt:new Date().toISOString()}];
+      const parts=item.published?.["date-parts"]?.[0]??[];
+      const publishedAt=parts[0]?new Date(Date.UTC(parts[0],Math.max(0,(parts[1]||1)-1),parts[2]||1)).toISOString():undefined;
+      return [{provider:"Crossref",title,url:target,snippet,observedAt:new Date().toISOString(),publishedAt}];
     });
   }
 }
