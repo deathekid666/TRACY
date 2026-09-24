@@ -35,6 +35,10 @@ function genericNoise(text:string,url:string){
   return /help center|how to |welcome to the forum|privacy statement|user agreement|log in|login|register |customer service|dictionary|définition|definition|app store|google play|watch videos|find reels|public user profile|community profile/.test(s);
 }
 
+function domainOf(url:string){
+  try{return new URL(url).hostname.replace(/^www\./,"")}catch{return ""}
+}
+
 function categoryFrom(source:{url:string;title:string|null;metadata:unknown}){
   const m=(source.metadata??{}) as Record<string,unknown>;
   const existing=String(m.category??"");
