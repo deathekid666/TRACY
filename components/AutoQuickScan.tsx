@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 type ScanState="idle"|"quick"|"deep"|"done"|"error";
 
-export function AutoQuickScan({caseId,query,enabled}:{caseId:string;query:string;enabled:boolean}){
+export function AutoQuickScan({caseId,query,enabled,version}:{caseId:string;query:string;enabled:boolean;version:string}){
   const router=useRouter();
   const started=useRef(false);
   const [state,setState]=useState<ScanState>("idle");
@@ -15,7 +15,7 @@ export function AutoQuickScan({caseId,query,enabled}:{caseId:string;query:string
     if(!enabled||started.current||!query.trim())return;
     started.current=true;
 
-    const key="tracy:auto-scan:"+caseId;
+    const key="tracy:auto-scan:"+caseId+":"+version;
     const previous=typeof window!=="undefined"?sessionStorage.getItem(key):null;
     if(previous==="done")return;
 
@@ -65,7 +65,7 @@ export function AutoQuickScan({caseId,query,enabled}:{caseId:string;query:string
 
     void run();
     return ()=>{cancelled=true};
-  },[caseId,enabled,query,router]);
+  },[caseId,enabled,query,router,version]);
 
   if(!enabled||state==="idle")return null;
 
