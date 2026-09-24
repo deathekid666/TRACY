@@ -334,7 +334,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
   const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
   const firstEnrichmentIds=[...new Set([...first.sourceIds,...academic.sourceIds,...staleEnrichmentIds])];
-  const firstEnrichment=await enrichPublicSources(caseId,firstEnrichmentIds,mode==="quick"?4:12);
+  const firstEnrichment=await enrichPublicSources(caseId,firstEnrichmentIds,12);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const usernameEntities=await db.entity.findMany({
