@@ -252,7 +252,7 @@ async function runQueries(original:string,queries:string[],deep=true){
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
 }
 
-async function preserve(caseId:string,original:string,results:Ranked[]){
+async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true){
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
@@ -282,7 +282,7 @@ async function preserve(caseId:string,original:string,results:Ranked[]){
 
   for(const result of unique.filter(r=>r.classification!=="NOISE"))await saveResult(result);
 
-  const deepCandidates=unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,MAX_DEEP_DOCUMENT_CHECKS);
+  const deepCandidates=deepValidation?unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,MAX_DEEP_DOCUMENT_CHECKS):[];
   const checks=await Promise.all(deepCandidates.map(async result=>{
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists)return {result,page:null,exists:true};
@@ -315,8 +315,8 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const firstRun=await runQueries(query,initialQueries,mode==="deep");
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
-  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults]);
-  const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds);
+  const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
+  const firstEnrichment=await enrichPublicSources(caseId,first.sourceIds,mode==="quick"?4:12);
   const firstExtraction=await extractEvidenceEntities(caseId);
 
   const usernameEntities=await db.entity.findMany({
@@ -329,7 +329,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
 
   const emptyPlatformRun={results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
   const platformRun1=mode==="deep"&&plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
-  const platform1=await preserve(caseId,query,platformRun1.results.filter(r=>r.classification!=="NOISE"));
+  const platform1=await preserve(caseId,query,platformRun1.results.filter(r=>r.classification!=="NOISE"),false);
   const platformExtraction1=platform1.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   const usernameEntitiesAfterRound1=await db.entity.findMany({
@@ -342,7 +342,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const newUsernameSeeds=allUsernameSeedsAfterRound1.filter(seed=>!usernameSeeds.includes(seed));
 
   const platformRun2=mode==="deep"&&plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
-  const platform2=await preserve(caseId,query,platformRun2.results.filter(r=>r.classification!=="NOISE"));
+  const platform2=await preserve(caseId,query,platformRun2.results.filter(r=>r.classification!=="NOISE"),false);
   const platformExtraction2=platform2.sourceIds.length?await extractEvidenceEntities(caseId):{entitiesCreated:0,linksCreated:0,removedUnsafePhones:0};
 
   const pivotQueries=mode==="deep"?(await getPublicPivots(caseId,query,MAX_RECURSIVE_SEARCHES)).filter(q=>!initialQueries.includes(q)):[];
@@ -354,8 +354,8 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   if(pivotQueries.length){
     const pivotRun=await runQueries(query,pivotQueries,false);
     secondCalls=pivotRun.calls;
-    second=await preserve(caseId,query,pivotRun.results);
-    secondEnrichment=await enrichPublicSources(caseId,second.sourceIds);
+    second=await preserve(caseId,query,pivotRun.results,false);
+    secondEnrichment=await enrichPublicSources(caseId,second.sourceIds,8);
     secondExtraction=await extractEvidenceEntities(caseId);
   }
 
@@ -367,7 +367,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const deepValidated=first.deepValidated+platform1.deepValidated+platform2.deepValidated+second.deepValidated,deepRejected=first.deepRejected+platform1.deepRejected+platform2.deepRejected+second.deepRejected;
   const serperCalls=firstRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
   const failedSerperCalls=(firstRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
-  const curation=await curateSources(caseId);
+  const curation=await curateSources(caseId,mode==="deep");
 
   await db.event.create({data:{
     caseId,title:"Deep public-footprint discovery",
