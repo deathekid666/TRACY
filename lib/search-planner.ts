@@ -38,6 +38,8 @@ export function buildSearchPlan(input:string):SearchPlan{
     '"'+a+'" université',
     '"'+a+'" FSJES',
     '"'+a+'" Scribd',
-    '"'+a+'" CV'
+    '"'+a+'" CV',
+    '"'+a+'" email contact',
+    '"'+a+'" phone telephone contact'
   ])};
 }
