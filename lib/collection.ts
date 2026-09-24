@@ -172,6 +172,9 @@ async function runQueries(original:string,queries:string[],deep=true){
     }
   }
 
+  if(jobs.length){
+    await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
+  }
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
 }
 
