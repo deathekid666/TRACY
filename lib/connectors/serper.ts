@@ -6,6 +6,14 @@ function simpleQuery(value:string){
   return value.replace(/["']/g,"").replace(/[()]/g," ").replace(/\s+/g," ").trim();
 }
 
+function fallbackQuery(value:string){
+  return simpleQuery(value)
+    .replace(/\bsite:([^\s]+)/gi,"$1")
+    .replace(/\bfiletype:([^\s]+)/gi,"$1")
+    .replace(/\s+/g," ")
+    .trim();
+}
+
 export class SerperWebConnector implements PublicConnector{
   id="serper-google";
   label="Google via Serper";
@@ -26,7 +34,7 @@ export class SerperWebConnector implements PublicConnector{
     const apiKey=process.env.SERPER_API_KEY;
     if(!apiKey)throw new Error("SERPER_API_KEY_NOT_CONFIGURED");
 
-    const attempts=[query,simpleQuery(query)].filter((v,i,a)=>v&&a.indexOf(v)===i);
+    const attempts=[query,simpleQuery(query),fallbackQuery(query)].filter((v,i,a)=>v&&a.indexOf(v)===i);
     let lastStatus=0,lastDetail="";
 
     for(const q of attempts){
