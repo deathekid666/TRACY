@@ -4,12 +4,18 @@ export function buildAcademicQueries(name:string){
   const reversed=parts.length>1?[...parts].reverse().join(" "):clean;
 
   return [...new Set([
-    '"'+clean+'" université',
-    '"'+reversed+'" université',
+    '"'+clean+'" PDF',
+    '"'+reversed+'" PDF',
     '"'+clean+'" étudiant',
     '"'+reversed+'" étudiant',
+    '"'+clean+'" inscription',
+    '"'+reversed+'" inscription',
+    '"'+clean+'" université',
+    '"'+reversed+'" université',
+    'site:scribd.com "'+clean+'"',
     'site:scribd.com "'+reversed+'"',
-    '"'+clean+'" ESB',
+    'filetype:pdf "'+clean+'"',
+    'filetype:pdf "'+reversed+'"',
     '"'+clean+'" "année universitaire"',
     '"'+reversed+'" "année universitaire"',
     '"'+clean+'" filière',
@@ -18,7 +24,7 @@ export function buildAcademicQueries(name:string){
     '"'+reversed+'" semestre',
     '"'+clean+'" apogee',
     '"'+reversed+'" apogee',
-    'site:fichier-pdf.fr "'+reversed+'"',
-    'filetype:pdf "'+reversed+'" université'
+    'site:fichier-pdf.fr "'+clean+'"',
+    'site:fichier-pdf.fr "'+reversed+'"'
   ])];
 }
