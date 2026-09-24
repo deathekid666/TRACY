@@ -4,6 +4,7 @@ export type CollectedResult = {
   provider: string;
   snippet?: string;
   observedAt?: string;
+  publishedAt?: string;
 };
 
 export interface PublicConnector {
