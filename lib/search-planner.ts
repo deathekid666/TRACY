@@ -21,7 +21,14 @@ export function buildSearchPlan(input:string):SearchPlan{
   const q=input.trim(),kind=detectSearchKind(q);
 
   if(kind!=="PERSON"){
-    return {kind,queries:unique([q,'"'+q+'"',q+" profile",q+" document PDF",q+" contact"])};
+    return {kind,queries:unique([
+      q,
+      '"'+q+'"',
+      q+" profile",
+      q+" account member user",
+      q+" document PDF",
+      q+" contact"
+    ])};
   }
 
   const v=variants(q),a=v[0],b=v[1]||a;
@@ -29,6 +36,8 @@ export function buildSearchPlan(input:string):SearchPlan{
   return {kind,queries:unique([
     '"'+a+'"',
     '"'+b+'"',
+    '"'+a+'" profile account member user',
+    '"'+b+'" profile account member user',
     '"'+a+'" PDF',
     '"'+b+'" PDF',
     '"'+a+'" étudiant',
@@ -40,6 +49,10 @@ export function buildSearchPlan(input:string):SearchPlan{
     '"'+a+'" Scribd',
     '"'+a+'" CV',
     '"'+a+'" email contact',
-    '"'+a+'" phone telephone contact'
+    '"'+a+'" phone telephone contact',
+    '"'+a+'" payment merchant donation invoice receipt',
+    '"'+a+'" PayPal Stripe Patreon Ko-fi BuyMeACoffee',
+    '"'+a+'" registration account profile member',
+    '"'+a+'" forum author contributor'
   ])};
 }
