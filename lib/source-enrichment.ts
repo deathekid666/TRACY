@@ -2,14 +2,24 @@ import { db } from "@/lib/db";
 import { fetchPublicPage } from "@/lib/public-page";
 
 const MAX_PAGES=12;
+const MAX_CANDIDATES=60;
+
+function classification(source:{metadata:unknown}){
+  const metadata=(source.metadata??{}) as Record<string,unknown>;
+  return String(metadata.classification??"");
+}
 
 export async function enrichPublicSources(caseId:string,sourceIds:string[]){
-  const orderedIds=sourceIds.slice(0,MAX_PAGES);
-  const sources=await db.source.findMany({where:{caseId,id:{in:orderedIds}}});
-  const byId=new Map(sources.map(s=>[s.id,s]));
-  const ordered=orderedIds.map(id=>byId.get(id)).filter((s):s is NonNullable<typeof s>=>Boolean(s));
+  const candidateIds=sourceIds.slice(0,MAX_CANDIDATES);
+  const sources=await db.source.findMany({where:{caseId,id:{in:candidateIds}}});
+  const order=new Map(sourceIds.map((id,index)=>[id,index]));
+  const prioritized=[...sources].sort((a,b)=>{
+    const ac=classification(a)==="CANDIDATE"?0:1;
+    const bc=classification(b)==="CANDIDATE"?0:1;
+    return ac-bc+(order.get(a.id)!-order.get(b.id)!)/10000;
+  }).slice(0,MAX_PAGES);
 
-  const outcomes=await Promise.all(ordered.map(async source=>{
+  const outcomes=await Promise.all(prioritized.map(async source=>{
     const page=await fetchPublicPage(source.url);
     if(!page)return false;
     await db.evidence.create({data:{
@@ -21,5 +31,5 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[]){
   }));
 
   const fetched=outcomes.filter(Boolean).length;
-  return {attempted:ordered.length,fetched,failed:ordered.length-fetched};
+  return {attempted:prioritized.length,fetched,failed:prioritized.length-fetched};
 }
