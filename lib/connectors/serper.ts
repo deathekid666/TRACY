@@ -14,6 +14,10 @@ function fallbackQuery(value:string){
     .trim();
 }
 
+function sleep(ms:number){
+  return new Promise(resolve=>setTimeout(resolve,ms));
+}
+
 export class SerperWebConnector implements PublicConnector{
   id="serper-google";
   label="Google via Serper";
@@ -38,27 +42,40 @@ export class SerperWebConnector implements PublicConnector{
     let lastStatus=0,lastDetail="";
 
     for(const q of attempts){
-      const response=await fetch("https://google.serper.dev"+endpoint,{
-        method:"POST",
-        headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
-        body:JSON.stringify({q,gl:"ma",hl:"fr",num,page}),
-        cache:"no-store",
-      });
+      for(let retry=0;retry<4;retry++){
+        const response=await fetch("https://google.serper.dev"+endpoint,{
+          method:"POST",
+          headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
+          body:JSON.stringify({q,gl:"ma",hl:"fr",num,page}),
+          cache:"no-store",
+        });
 
-      if(response.ok){
-        const data=(await response.json()) as SerperResponse;
-        return (data.organic??[]).filter(item=>item.link&&item.title).map(item=>({
-          provider:provider+" p"+page,
-          title:item.title!,
-          url:item.link!,
-          snippet:[item.publicationInfo,item.snippet].filter(Boolean).join(" — "),
-          observedAt:new Date().toISOString()
-        }));
+        if(response.ok){
+          const data=(await response.json()) as SerperResponse;
+          return (data.organic??[]).filter(item=>item.link&&item.title).map(item=>({
+            provider:provider+" p"+page,
+            title:item.title!,
+            url:item.link!,
+            snippet:[item.publicationInfo,item.snippet].filter(Boolean).join(" — "),
+            observedAt:new Date().toISOString()
+          }));
+        }
+
+        lastStatus=response.status;
+        lastDetail=(await response.text()).slice(0,200);
+
+        if(response.status===429){
+          const retryAfter=response.headers.get("retry-after");
+          const waitFromHeader=retryAfter?Number(retryAfter)*1000:0;
+          const backoff=Math.max(waitFromHeader,1100*(retry+1));
+          await sleep(Math.min(backoff,5000));
+          continue;
+        }
+
+        break;
       }
 
-      lastStatus=response.status;
-      lastDetail=(await response.text()).slice(0,200);
-      if(response.status!==400||!lastDetail.includes("Query pattern not allowed"))break;
+      if(lastStatus!==400||!lastDetail.includes("Query pattern not allowed"))break;
     }
 
     throw new Error(`SERPER_HTTP_${lastStatus}: ${lastDetail}`);
