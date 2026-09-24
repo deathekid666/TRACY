@@ -17,7 +17,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
       count:outcome.added,
       found:outcome.results.length,
       skipped:outcome.skipped,
-      results:outcome.results
+      results:outcome.results,\n      queries:outcome.queries,\n      filtered:outcome.noise
     });
   }catch(error){
     console.error("Public discovery failed",error);
