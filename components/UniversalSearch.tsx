@@ -37,7 +37,7 @@ export default function UniversalSearch(){
       const investigation=await created.json();
       if(!created.ok)throw new Error(investigation.error||"Could not start investigation");
 
-      const collected=await fetch(`/api/cases/${investigation.id}/collect`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:value})});
+      const collected=await fetch(`/api/cases/${investigation.id}/collect`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:value,mode:"quick"})});
       const outcome=await collected.json();
       if(!collected.ok)throw new Error(outcome.detail||outcome.error||"Search failed");
       router.push(`/cases/${investigation.id}`);
@@ -55,7 +55,7 @@ export default function UniversalSearch(){
         className="search-input" aria-label="Universal investigation search"/>
       <button className="search-button" disabled={busy||!query.trim()}>{busy?"Searching…":"Search"}</button>
     </div>
-    {busy&&<div className="mt-5 text-center text-sm text-slate-400">Searching public sources and correlating results…</div>}
+    {busy&&<div className="mt-5 text-center text-sm text-slate-400">Running a quick scan first. Deep discovery can continue inside the case.</div>}
     {error&&<div className="mt-5 text-center text-sm text-red-300">{error}</div>}
   </form>
 }
