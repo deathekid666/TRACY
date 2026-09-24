@@ -1,3 +1,14 @@
-import Link from "next/link";
-const cards=[["Cases","Create and manage investigations","/cases"],["Search","Start from a person, username, email, phone, domain or organization","/cases/new"],["Graph","Explore evidence-backed relationships","#"],["Timeline","Review events chronologically","#"],["Media","Review public images and videos","#"],["Finance Lab","Analyze synthetic transaction data during development","#"]];
-export default function Home(){return <main className="min-h-screen p-8 md:p-12"><div className="mx-auto max-w-7xl"><div className="mb-10 flex items-center justify-between gap-4"><div><p className="text-sm tracking-[.35em] text-cyan-300">TRACY</p><h1 className="mt-2 text-4xl font-semibold md:text-6xl">Investigation Intelligence</h1><p className="mt-4 max-w-2xl text-slate-400">Correlate public-source information, evidence, media, entities and timelines in one case workspace.</p></div><Link href="/cases/new" className="rounded-xl border border-cyan-300/30 bg-cyan-300/10 px-5 py-3 text-sm text-cyan-200">New investigation</Link></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{cards.map(([t,d,h])=><Link key={t} href={h} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-6 transition hover:border-cyan-300/30"><div className="text-lg font-medium">{t}</div><div className="mt-2 text-sm leading-6 text-slate-400">{d}</div></Link>)}</div></div></main>}
+import UniversalSearch from "@/components/UniversalSearch";
+
+export default function Home(){
+  return <main className="search-home">
+    <div className="search-home-inner">
+      <div className="brand-mark">TRACY</div>
+      <h1 className="search-title">Find the public footprint.</h1>
+      <p className="search-subtitle">Start with one identifier. TRACY searches public sources, filters unrelated results and builds the investigation automatically.</p>
+      <UniversalSearch/>
+      <div className="search-hints"><span>NAME</span><span>USERNAME</span><span>EMAIL</span><span>PHONE</span><span>DOMAIN</span></div>
+      <p className="search-note">Public and lawfully accessible information only. Every finding remains tied to its source.</p>
+    </div>
+  </main>
+}
