@@ -1,33 +1,59 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { SourceLibrary, type SourceLibraryItem } from "@/components/SourceLibrary";
 
 function meta(value:unknown){return (value??{}) as Record<string,unknown>}
 
+export const dynamic="force-dynamic";
+
 export default async function Sources({params}:{params:Promise<{id:string}>}){
- const {id}=await params;
- const c=await db.case.findUnique({where:{id},include:{sources:{orderBy:{collectedAt:"desc"}}}});
- if(!c) notFound();
- return <main className="min-h-screen p-8"><div className="mx-auto max-w-6xl">
-  <Link href={`/cases/${id}`} className="text-sm text-slate-400">← {c.title}</Link>
-  <h1 className="mt-5 text-3xl font-semibold">Sources</h1>
-  <p className="mt-2 text-sm text-slate-400">Every source retains its provider, URL, confidence state and collection timestamp.</p>
-  <div className="mt-8 grid gap-4">{c.sources.map(s=>{
+  const {id}=await params;
+  const c=await db.case.findUnique({where:{id},include:{sources:{orderBy:{collectedAt:"desc"}}}});
+  if(!c) notFound();
+
+  const items:SourceLibraryItem[]=c.sources.map(s=>{
     const m=meta(s.metadata);
-    const classification=String(m.classification??"UNCLASSIFIED");
-    const score=typeof m.identityScore==="number"?m.identityScore:null;
-    const category=String(m.category??"GENERAL");
-    return <article key={s.id} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="text-xs text-cyan-300">{s.provider??"SOURCE"}</div>
-        <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] tracking-wider text-slate-400">{classification}</span>
-        <span className="rounded-full border border-cyan-900/60 px-2 py-0.5 text-[10px] tracking-wider text-cyan-500">{category}</span>
-        {score!==null&&<span className="text-[10px] text-slate-600">score {score}</span>}
+    const decisionRaw=String(m.curatedDecision??"UNREVIEWED");
+    const decision:SourceLibraryItem["decision"]=
+      decisionRaw==="KEEP"||decisionRaw==="REVIEW"||decisionRaw==="REJECT"?decisionRaw:"UNREVIEWED";
+
+    return {
+      id:s.id,
+      title:s.title??s.url,
+      url:s.url,
+      provider:s.provider??"SOURCE",
+      collectedAt:s.collectedAt.toISOString(),
+      publishedAt:typeof m.publishedAt==="string"?m.publishedAt:undefined,
+      modifiedAt:typeof m.modifiedAt==="string"?m.modifiedAt:undefined,
+      classification:String(m.classification??"UNCLASSIFIED"),
+      category:String(m.curatedCategory??m.category??"GENERAL"),
+      decision,
+      confidence:typeof m.curatedConfidence==="number"?m.curatedConfidence:(typeof m.identityScore==="number"?m.identityScore:null),
+      reason:String(m.curatedReason??""),
+      aiCurated:Boolean(m.aiCurated),
+      imageUrl:typeof m.imageUrl==="string"?m.imageUrl:undefined
+    };
+  });
+
+  return <main className="min-h-screen p-6 md:p-10">
+    <div className="mx-auto max-w-7xl">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <Link href={`/cases/${id}`} className="text-sm text-slate-400 hover:text-white">← {c.title}</Link>
+          <p className="mt-6 text-xs font-semibold tracking-[.3em] text-cyan-300">EVIDENCE LIBRARY</p>
+          <h1 className="mt-2 text-3xl font-semibold">Sources</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Relevant evidence is shown first. Weak or unrelated results remain available under Filtered noise and All raw sources for auditability.</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-right">
+          <div className="text-2xl font-semibold">{items.length}</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500">Total collected</div>
+        </div>
       </div>
-      <h2 className="mt-2 font-medium">{s.title??s.url}</h2>
-      <a href={s.url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-sm text-slate-400 hover:text-cyan-200">{s.url}</a>
-      <div className="mt-3 text-xs text-slate-600">Collected {s.collectedAt.toISOString()}</div>
-    </article>
-  })}</div>
- </div></main>;
+
+      <div className="mt-8">
+        <SourceLibrary items={items}/>
+      </div>
+    </div>
+  </main>;
 }
