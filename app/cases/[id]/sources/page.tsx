@@ -16,10 +16,12 @@ export default async function Sources({params}:{params:Promise<{id:string}>}){
     const m=meta(s.metadata);
     const classification=String(m.classification??"UNCLASSIFIED");
     const score=typeof m.identityScore==="number"?m.identityScore:null;
+    const category=String(m.category??"GENERAL");
     return <article key={s.id} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
       <div className="flex flex-wrap items-center gap-2">
         <div className="text-xs text-cyan-300">{s.provider??"SOURCE"}</div>
         <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] tracking-wider text-slate-400">{classification}</span>
+        <span className="rounded-full border border-cyan-900/60 px-2 py-0.5 text-[10px] tracking-wider text-cyan-500">{category}</span>
         {score!==null&&<span className="text-[10px] text-slate-600">score {score}</span>}
       </div>
       <h2 className="mt-2 font-medium">{s.title??s.url}</h2>
