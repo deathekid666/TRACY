@@ -45,7 +45,7 @@ export async function extractEvidenceEntities(caseId:string){
 
   const evidence=await db.evidence.findMany({
     where:{caseId,sourceId:{not:null}},
-    include:{source:{select:{url:true,metadata:true}}},
+    include:{source:{select:{url:true,title:true,metadata:true}}},
     orderBy:{collectedAt:"desc"},
     take:160
   });
@@ -59,11 +59,15 @@ export async function extractEvidenceEntities(caseId:string){
 
     const query=queryFrom(item.metadata)||queryFrom(item.source.metadata);
     const kind=kindFrom(item.metadata);
+    const sourceTitle=item.source.title||"";
+    const sourceTitleTokens=new Set(tokens(sourceTitle));
+    const queryTokens=tokens(query);
+    const sourceTitleMatchesIdentity=queryTokens.length>0&&queryTokens.every(t=>sourceTitleTokens.has(t));
     const text=[item.title,item.content].filter(Boolean).join(" ");
     const found:Array<{type:"EMAIL"|"USERNAME"|"PHONE";raw:string;canonical:string}>=[];
 
     for(const raw of [...new Set(text.match(EMAIL)??[])].slice(0,10)){
-      if(nearIdentity(text,raw,query))found.push({type:"EMAIL",raw,canonical:raw.toLowerCase()});
+      if(nearIdentity(text,raw,query,320)||sourceTitleMatchesIdentity)found.push({type:"EMAIL",raw,canonical:raw.toLowerCase()});
     }
 
     if(kind==="PUBLIC_SEARCH_RESULT"){
