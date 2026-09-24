@@ -104,7 +104,7 @@ async function aiReview(
   }
 }
 
-export async function curateSources(caseId:string){
+export async function curateSources(caseId:string,useAi=true){
   const investigation=await db.case.findUnique({
     where:{id:caseId},
     include:{
@@ -160,7 +160,7 @@ export async function curateSources(caseId:string){
     }
   }
 
-  const ai=await aiReview(personName,aiCandidates);
+  const ai=useAi?await aiReview(personName,aiCandidates):{decisions:[] as AiDecision[],facts:[] as AiFact[],enabled:false};
   const aiById=new Map(ai.decisions.map(d=>[d.sourceId,d]));
 
   let kept=0,review=0,rejected=0;
@@ -232,6 +232,7 @@ export async function curateSources(caseId:string){
     metadata:{
       kept,review,rejected,
       aiEnabled:ai.enabled,
+      aiRequested:useAi,
       aiDecisionCount:ai.decisions.length,
       facts
     }
