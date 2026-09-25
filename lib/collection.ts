@@ -96,6 +96,12 @@ function hasIdentityEvidence(query:string,result:CollectedResult){
   const title=result.title||"",snippet=result.snippet||"",url=result.url||"";
   return identityInText(title+" "+snippet,query)||allTokensPresent(url,qt);
 }
+function surnameVisible(query:string,result:CollectedResult){
+  const qt=tokens(query);
+  const surname=qt[qt.length-1]||"";
+  if(!surname)return false;
+  return tokens((result.title||"")+" "+(result.snippet||"")+" "+(result.url||"")).includes(surname);
+}
 function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|student|students|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours|scribd|academia|researchgate|drive\.google|docs\.google/.test(s)}
 function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
 function isAccountLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /profile|account|member|author|contributor|forum|community|user\b|github|reddit|medium|tumblr|twitch|instagram|facebook|linkedin|pinterest|threads\.net|tiktok|snapchat|discord|wechat|weixin|hypixel|op\.gg/.test(s)}
@@ -402,10 +408,10 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     if(!checked.page||!identityInText(checked.page.text,original)){
       deepRejected++;
       noise++;
-      if(retainUnverifiedCandidates){
+      if(retainUnverifiedCandidates&&surnameVisible(original,checked.result)){
         checked.result.score=Math.max(20,checked.result.score);
         checked.result.classification="CANDIDATE";
-        checked.result.reasons=[...checked.result.reasons.filter(r=>!r.startsWith("rejected:")),"academic/document candidate from an exact-name search; identity not yet verified inside fetched content"];
+        checked.result.reasons=[...checked.result.reasons.filter(r=>!r.startsWith("rejected:")),"academic/document candidate retains the searched surname but full identity was not verified inside fetched content"];
         await saveResult(checked.result);
         retainedCandidateUrls.add(checked.result.url);
         retainedCandidates++;
@@ -427,6 +433,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
       if(result.classification!=="NOISE")continue;
       if(deepSet.has(result.url)||retainedCandidateUrls.has(result.url))continue;
       if(!isDocumentLike(result)&&!isInstitutionLike(result))continue;
+      if(!surnameVisible(original,result))continue;
 
       const count=perQuery.get(result.discoveryQuery)??0;
       if(count>=5)continue;
