@@ -71,7 +71,25 @@ function institutionFrom(text:string,title:string){
   );
 }
 
+function identityContext(text:string,name:string,radius=2200){
+  const normalized=norm(text);
+  const variants=[norm(name),norm(name.split(/\s+/).reverse().join(" "))];
+  let normalizedIndex=-1;
+  for(const variant of variants){
+    const i=normalized.indexOf(variant);
+    if(i>=0){normalizedIndex=i;break}
+  }
+  if(normalizedIndex<0)return "";
+  const ratio=text.length/Math.max(1,normalized.length);
+  const rawIndex=Math.floor(normalizedIndex*ratio);
+  return text.slice(Math.max(0,rawIndex-radius),Math.min(text.length,rawIndex+radius));
+}
+
 function studentRecordIdNearName(text:string,name:string){
+  const cleaned=asciiDigits(text).replace(/\s+/g," ");
+  const nameVariants=[name.trim(),name.trim().split(/\s+/).reverse().join(" ")];
+  for(const variant of nameVariants){
+    const escaped=variant.replace(/[.*+?^$()|[\]\\]/g,"\\function studentRecordIdNearName(text:string,name:string){
   const lower=norm(text);
   const variants=[norm(name),norm(name.split(/\s+/).reverse().join(" "))];
   let rawIndex=-1;
@@ -84,6 +102,13 @@ function studentRecordIdNearName(text:string,name:string){
   const normalizedPrefix=lower.slice(Math.max(0,rawIndex-45),rawIndex);
   const matches=normalizedPrefix.match(/\b\d{6,12}\b/g);
   return matches?.at(-1);
+}").replace(/\s+/g,"\\s+");
+    const before=new RegExp("(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})[^\\n]{0,90}"+escaped,"i");
+    const after=new RegExp(escaped+"[^\\n]{0,90}(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})","i");
+    const match=cleaned.match(before)||cleaned.match(after);
+    if(match?.[1])return match[1];
+  }
+  return undefined;
 }
 
 function educationProfileEntries(text:string){
@@ -121,9 +146,6 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
 
   for(const source of sources){
     const sm=meta(source.metadata);
-    const decision=String(sm.curatedDecision??"UNREVIEWED");
-    if(decision==="REJECT")continue;
-
     const category=String(sm.curatedCategory??sm.category??"GENERAL");
     const sourceText=[source.title??"",...source.evidence.map(e=>e.content??"")].join(" ");
     const academicSignal=
@@ -132,6 +154,7 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
 
     if(!academicSignal||!identityMatch(sourceText,personName))continue;
 
+    const context=identityContext(sourceText,personName);
     const profileEntries=educationProfileEntries(sourceText);
     for(const entry of profileEntries){
       records.push({
@@ -145,13 +168,15 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
       });
     }
 
-    const academicYear=capture(sourceText,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20);
-    const semester=capture(sourceText,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20);
-    const session=capture(sourceText,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,60})/i,70);
-    const program=capture(sourceText,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
-    const module=capture(sourceText,/Module\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
-    const institution=institutionFrom(sourceText,source.title??"");
-    const studentRecordId=studentRecordIdNearName(sourceText,personName);
+    const academicYear=capture(context,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20)
+      ||capture(context,/\b((?:19|20)\d{2}\s*\/\s*(?:19|20)\d{2})\b/i,20)
+      ||capture(sourceText,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20);
+    const semester=capture(context,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20)||capture(sourceText,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20);
+    const session=capture(context,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9' -]{0,60})/i,70)||capture(sourceText,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9' -]{0,60})/i,70);
+    const program=capture(context,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100)||capture(sourceText,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
+    const module=capture(context,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100)||capture(sourceText,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
+    const institution=institutionFrom(context,source.title??"")||institutionFrom(sourceText,source.title??"");
+    const studentRecordId=studentRecordIdNearName(context,personName);
 
     const hasDocumentRecord=Boolean(academicYear||semester||session||program||module||studentRecordId||institution);
     if(hasDocumentRecord){
