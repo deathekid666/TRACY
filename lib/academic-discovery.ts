@@ -8,6 +8,8 @@ export function buildAcademicQueries(name:string){
     '"'+reversed+'" PDF',
     '"'+clean+'" étudiant',
     '"'+reversed+'" étudiant',
+    'site:scribd.com/document "'+clean+'"',
+    'site:scribd.com/document "'+reversed+'"',
     'site:scribd.com "'+clean+'"',
     'site:scribd.com "'+reversed+'"',
     '"'+clean+'" inscription',
