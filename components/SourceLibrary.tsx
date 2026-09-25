@@ -26,7 +26,7 @@ function dateLabel(value?:string){
 }
 
 export function SourceLibrary({items}:{items:SourceLibraryItem[]}){
-  const [view,setView]=useState<"RELEVANT"|"REVIEW"|"HIDDEN"|"ALL">("ALL");
+  const [view,setView]=useState<"RELEVANT"|"REVIEW"|"HIDDEN"|"ALL">("RELEVANT");
   const [category,setCategory]=useState("ALL");
   const [query,setQuery]=useState("");
 
