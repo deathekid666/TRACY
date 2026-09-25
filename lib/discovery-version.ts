@@ -1,1 +1,1 @@
-export const DISCOVERY_VERSION="2026-09-25-evidence-pipeline-v4";
+export const DISCOVERY_VERSION="2026-09-25-identity-strict-v5";
