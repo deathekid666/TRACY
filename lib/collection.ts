@@ -26,12 +26,14 @@ const MAX_PLATFORM_CALLS=30;
 
 const RESERVED_PIVOT_HANDLES=new Set([
   "public","profile","profiles","people","user","users","help","support","groups","pages",
-  "reel","reels","explore","community","communities","business","search","topics","settings"
+  "reel","reels","explore","community","communities","business","search","topics","settings",
+  "watch","events","marketplace","about","login","signin","signup","register"
 ]);
 
 function validPivotHandle(value:string){
   const v=value.toLowerCase().replace(/^@/,"").trim();
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&!RESERVED_PIVOT_HANDLES.has(v);
+  const looksLikeDomain=/\.(?:com|net|org|io|co|ma|fr|uk|me|tv|dev|app)$/i.test(v);
+  return /^[a-z0-9._-]{3,32}$/.test(v)&&!looksLikeDomain&&!RESERVED_PIVOT_HANDLES.has(v);
 }
 
 function reservedPlatformArtifact(metadata:unknown){
