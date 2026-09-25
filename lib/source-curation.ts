@@ -187,7 +187,7 @@ export async function curateSources(caseId:string,useAi=true){
     .map(e=>norm(e.canonical||e.label).replace(/^@/,""))
     .filter(u=>Boolean(u)&&!RESERVED_HANDLES.has(u));
 
-  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string;bodyIdentity:boolean}>();
+  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string;bodyIdentity:boolean;forcedReject:boolean}>();
   const aiCandidates:Array<{id:string;url:string;title:string;snippet:string;deterministic:string}>=[];
 
   for(const source of investigation.sources){
@@ -215,19 +215,19 @@ export async function curateSources(caseId:string,useAi=true){
     const academicPlausibility=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;
     const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
     const bodyVerifiedAcademic=bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
-    const indirectAccountHit=category==="PUBLIC_ACCOUNT"&&!directProfileSurface(source.url)&&!titleIdentity&&!urlIdentity&&!handleMatch;
-    if(indirectAccountHit){score-=60;reasons.push("indirect social/group page, not a direct identity profile")}
+    const nonProfileAccountSurface=category==="PUBLIC_ACCOUNT"&&!directProfileSurface(source.url);
+    if(nonProfileAccountSurface){score-=90;reasons.push("directory/group/search surface, not an individual public profile")}
     const decision:CuratedDecision=bodyVerifiedAcademic
       ?"KEEP"
       :(isAcademicCandidate
         ?(academicPlausibility>=25?"REVIEW":"REJECT")
-        :(indirectAccountHit?"REJECT":(score>=75?"KEEP":score>=45?"REVIEW":"REJECT")));
+        :(nonProfileAccountSurface?"REJECT":(score>=75?"KEEP":score>=45?"REVIEW":"REJECT")));
     if(isAcademicCandidate){
       reasons.push(academicPlausibility>=25
         ?"academic/document lead retained for analyst review"
         :"low-plausibility academic search result kept only in raw sources");
     }
-    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet,bodyIdentity});
+    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet,bodyIdentity,forcedReject:nonProfileAccountSurface});
 
     if(decision!=="REJECT"&&aiCandidates.length<36){
       aiCandidates.push({
@@ -273,7 +273,7 @@ export async function curateSources(caseId:string,useAi=true){
     const aiDecision=aiById.get(source.id);
     const duplicateTarget=duplicateOf.get(source.id);
     const bodyVerifiedAcademic=pre.bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(pre.category);
-    const decision:CuratedDecision=duplicateTarget?"REJECT":(bodyVerifiedAcademic?"KEEP":(aiDecision?.decision??pre.decision));
+    const decision:CuratedDecision=duplicateTarget||pre.forcedReject?"REJECT":(bodyVerifiedAcademic?"KEEP":(aiDecision?.decision??pre.decision));
     finalDecisionById.set(source.id,decision);
     if(decision==="KEEP")kept++;
     else if(decision==="REVIEW")review++;
