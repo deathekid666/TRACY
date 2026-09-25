@@ -94,7 +94,7 @@ function classify(score:number){return score>=70?"STRONG":score>=45?"POSSIBLE":"
 function hasIdentityEvidence(query:string,result:CollectedResult){
   const qt=tokens(query);
   const title=result.title||"",snippet=result.snippet||"",url=result.url||"";
-  return allTokensPresent(title,qt)||allTokensPresent(snippet,qt)||allTokensPresent(url,qt);
+  return identityInText(title+" "+snippet,query)||allTokensPresent(url,qt);
 }
 function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.pdf\b|pdf|document|liste|list|resultat|résultat|inscription|etudiant|étudiant|student|students|universit|facult|fsjes|fsjp|cv|resume|mémoire|memoire|soutenance|concours|scribd|academia|researchgate|drive\.google|docs\.google/.test(s)}
 function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
