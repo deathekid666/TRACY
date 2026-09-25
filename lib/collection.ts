@@ -31,7 +31,6 @@ function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
 function usernameFromUrl(url:string){
   try{
     const u=new URL(url),host=u.hostname.replace(/^www\./,""),p=u.pathname.split("/").filter(Boolean);
-    if(/linkedin\.com$/.test(host)&&p[0]==="in")return p[1]||"";
     if(/reddit\.com$/.test(host)&&p[0]==="user")return p[1]||"";
     if(/snapchat\.com$/.test(host)&&p[0]==="add")return p[1]||"";
     if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))return (p[0]||"").replace(/^@/,"");
@@ -78,6 +77,26 @@ function isDocumentLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.sni
 function isInstitutionLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /\.ac\.ma|\.edu\b|universit|facult|fsjes|fsjp|encg|est\b|ecole|école|institut|student|students|etudiant|étudiant/.test(s)}
 function isAccountLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /profile|account|member|author|contributor|forum|community|user\b|github|reddit|medium|tumblr|twitch|instagram|facebook|linkedin|pinterest|threads\.net|tiktok|snapchat|discord|wechat|weixin|hypixel|op\.gg/.test(s)}
 function isCommerceLike(r:CollectedResult){const s=(r.title+" "+r.url+" "+(r.snippet||"")).toLowerCase();return /payment|merchant|donation|donate|invoice|receipt|checkout|paypal|stripe|patreon|ko-fi|buymeacoffee|gofundme|crowdfunding|shop|store/.test(s)}
+function academicCandidatePlausibility(original:string,r:CollectedResult){
+  const q=tokens(original);
+  const first=q[0]||"";
+  const last=q[q.length-1]||"";
+  const title=norm(r.title||"");
+  const snippet=norm(r.snippet||"");
+  const url=norm(r.url||"");
+  const hay=title+" "+snippet+" "+url;
+  let score=0;
+
+  if(last&&hay.includes(last)){score+=55}
+  if(first&&hay.includes(first)){score+=10}
+  if(/student|etudiant|universit|facult|filiere|semestre|apogee|module|liste|list|resultat|inscription|academic|school/.test(hay)){score+=20}
+  if(/scribd|\.ac\.ma|\.edu\b|researchgate|academia/.test(hay)){score+=10}
+  if(first&&title.includes(first)&&last&&!title.includes(last)){score-=25}
+  if(/ambassade|companies|company list|nizar qabbani|home to the world|generic|tourisme|tourism/.test(hay)){score-=35}
+
+  return Math.max(0,Math.min(100,score));
+}
+
 function categoryFor(r:CollectedResult){
   if(isAccountLike(r))return "PUBLIC_ACCOUNT";
   if(isCommerceLike(r))return "PUBLIC_COMMERCE";
@@ -269,7 +288,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     if(exists){skipped++;return}
     const source=await db.source.create({data:{
       caseId,url:sanitizePostgresText(result.url),title:sanitizePostgresText(result.title),provider:sanitizePostgresText(result.provider),
-      metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
+      metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),academicCandidatePlausibility:academicCandidatePlausibility(original,result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
     }});
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:sanitizePostgresText(result.title),content:sanitizePostgresText(result.snippet||"Public search result"),
