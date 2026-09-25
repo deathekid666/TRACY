@@ -30,6 +30,28 @@ function hasAll(haystack:string,needles:string[]){
   return needles.length>0&&needles.every(t=>set.has(t));
 }
 
+function containsIdentity(text:string,name:string){
+  const n=tokens(name);
+  if(n.length<2)return false;
+  const normalized=" "+norm(text)+" ";
+  const forward=" "+n.join(" ")+" ";
+  const reverse=" "+[...n].reverse().join(" ")+" ";
+  return normalized.includes(forward)||normalized.includes(reverse);
+}
+
+function identityExcerpt(text:string,name:string,radius=1800){
+  const normalizedName=norm(name);
+  const normalizedText=norm(text);
+  let i=normalizedText.indexOf(normalizedName);
+  if(i<0)i=normalizedText.indexOf([...tokens(name)].reverse().join(" "));
+  if(i<0)return text.slice(0,1800);
+  const ratio=text.length/Math.max(1,normalizedText.length);
+  const rawIndex=Math.floor(i*ratio);
+  return text.slice(Math.max(0,rawIndex-radius),Math.min(text.length,rawIndex+radius));
+}
+
+const RESERVED_HANDLES=new Set(["public","profile","profiles","people","user","users","help","support","groups","pages","reel","reels","explore","community","communities"]);
+
 function genericNoise(text:string,url:string){
   const s=(text+" "+url).toLowerCase();
   return /help center|how to |welcome to the forum|privacy statement|user agreement|log in|login|register |customer service|dictionary|définition|definition|app store|google play|watch videos|find reels|public user profile|community profile/.test(s);
@@ -127,23 +149,25 @@ export async function curateSources(caseId:string,useAi=true){
   const usernames=investigation.entities
     .filter(e=>e.type==="USERNAME")
     .map(e=>norm(e.canonical||e.label).replace(/^@/,""))
-    .filter(Boolean);
+    .filter(u=>Boolean(u)&&!RESERVED_HANDLES.has(u));
 
-  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string}>();
+  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string;bodyIdentity:boolean}>();
   const aiCandidates:Array<{id:string;url:string;title:string;snippet:string;deterministic:string}>=[];
 
   for(const source of investigation.sources){
     const m=(source.metadata??{}) as Record<string,unknown>;
-    const snippet=source.evidence.map(e=>e.content||"").join(" ").slice(0,1800);
+    const fullEvidence=source.evidence.map(e=>e.content||"").join(" ");
+    const bodyIdentity=containsIdentity(fullEvidence,personName);
+    const snippet=bodyIdentity?identityExcerpt(fullEvidence,personName):fullEvidence.slice(0,1800);
     const combined=[source.title||"",source.url,snippet].join(" ");
     const titleAndSnippet=[source.title||"",snippet].join(" ");
-    const rootMatch=hasAll(titleAndSnippet,nameTokens)||hasAll(source.url,nameTokens);
+    const rootMatch=bodyIdentity||hasAll(titleAndSnippet,nameTokens)||hasAll(source.url,nameTokens);
     const handleMatch=usernames.some(u=>u.length>=3&&norm(combined).includes(u));
     const identityScore=typeof m.identityScore==="number"?m.identityScore:0;
     let score=identityScore;
     const reasons:string[]=[];
 
-    if(rootMatch){score+=35;reasons.push("root identity visible")}
+    if(rootMatch){score+=35;reasons.push(bodyIdentity?"root identity found inside captured source":"root identity visible")}
     if(handleMatch){score+=15;reasons.push("known handle visible")}
     if(genericNoise(combined,source.url)&&!rootMatch&&!handleMatch){score-=70;reasons.push("generic or unrelated page")}
     if(!rootMatch&&!handleMatch){score-=35;reasons.push("no supported identity signal")}
@@ -152,15 +176,18 @@ export async function curateSources(caseId:string,useAi=true){
     const sourceClassification=String(m.classification??"");
     const academicPlausibility=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;
     const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
-    const decision:CuratedDecision=isAcademicCandidate
-      ?(academicPlausibility>=25?"REVIEW":"REJECT")
-      :(score>=75?"KEEP":score>=45?"REVIEW":"REJECT");
+    const bodyVerifiedAcademic=bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
+    const decision:CuratedDecision=bodyVerifiedAcademic
+      ?"KEEP"
+      :(isAcademicCandidate
+        ?(academicPlausibility>=25?"REVIEW":"REJECT")
+        :(score>=75?"KEEP":score>=45?"REVIEW":"REJECT"));
     if(isAcademicCandidate){
       reasons.push(academicPlausibility>=25
         ?"academic/document lead retained for analyst review"
         :"low-plausibility academic search result kept only in raw sources");
     }
-    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet});
+    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet,bodyIdentity});
 
     if(decision!=="REJECT"&&aiCandidates.length<36){
       aiCandidates.push({
@@ -205,7 +232,8 @@ export async function curateSources(caseId:string,useAi=true){
     const pre=preliminary.get(source.id)!;
     const aiDecision=aiById.get(source.id);
     const duplicateTarget=duplicateOf.get(source.id);
-    const decision:CuratedDecision=duplicateTarget?"REJECT":(aiDecision?.decision??pre.decision);
+    const bodyVerifiedAcademic=pre.bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(pre.category);
+    const decision:CuratedDecision=duplicateTarget?"REJECT":(bodyVerifiedAcademic?"KEEP":(aiDecision?.decision??pre.decision));
     finalDecisionById.set(source.id,decision);
     if(decision==="KEEP")kept++;
     else if(decision==="REVIEW")review++;
@@ -217,7 +245,7 @@ export async function curateSources(caseId:string,useAi=true){
       data:{metadata:{
         ...current,
         curatedDecision:decision,
-        curatedReason:duplicateTarget?("Duplicate of source "+duplicateTarget):(aiDecision?.summary||pre.reason),
+        curatedReason:duplicateTarget?("Duplicate of source "+duplicateTarget):(bodyVerifiedAcademic?"Exact searched identity found inside captured academic/document evidence":(aiDecision?.summary||pre.reason)),
         curatedConfidence:aiDecision?.confidence??Math.max(0,Math.min(100,pre.score)),
         curatedCategory:aiDecision?.category||pre.category,
         aiCurated:Boolean(aiDecision),
