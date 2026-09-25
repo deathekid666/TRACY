@@ -1,1 +1,1 @@
-export const DISCOVERY_VERSION="2026-09-25-identity-strict-v5";
+export const DISCOVERY_VERSION="2026-09-25-contact-discovery-v6";
