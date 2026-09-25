@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { CollectSources } from "@/components/CollectSources";
 import { AutoQuickScan } from "@/components/AutoQuickScan";
 import { DISCOVERY_VERSION } from "@/lib/discovery-version";
+import { isReservedHandle, isReservedPivotArtifact } from "@/lib/identity-quality";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const defaultQuery=person?.label ?? username?.label ?? investigation.title;
   const emails=investigation.entities.filter(e=>e.type==="EMAIL");
   const phones=investigation.entities.filter(e=>e.type==="PHONE");
-  const usernames=investigation.entities.filter(e=>e.type==="USERNAME");
+  const usernames=investigation.entities.filter(e=>e.type==="USERNAME"&&!isReservedHandle(e.canonical||e.label));
   const locations=investigation.entities.filter(e=>e.type==="LOCATION");
   const organizations=investigation.entities.filter(e=>e.type==="ORGANIZATION");
 
@@ -68,15 +69,16 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const academicMeta=meta(academicEvent?.metadata);
   const academicRecords=(Array.isArray(academicMeta.records)?academicMeta.records:[]) as AcademicRecord[];
 
-  const visibleSources=investigation.sources.filter(s=>decision(s)!=="REJECT");
+  const cleanSources=investigation.sources.filter(s=>!isReservedPivotArtifact(s.metadata));
+  const visibleSources=cleanSources.filter(s=>decision(s)!=="REJECT");
   const relevantSources=visibleSources.filter(s=>decision(s)==="KEEP");
   const reviewSources=visibleSources.filter(s=>decision(s)!=="KEEP");
-  const rejectedSources=investigation.sources.filter(s=>decision(s)==="REJECT");
+  const rejectedSources=cleanSources.filter(s=>decision(s)==="REJECT");
   const rejectedCount=rejectedSources.length;
 
   const accounts=visibleSources.filter(s=>sourceCategory(s)==="PUBLIC_ACCOUNT");
   const documents=visibleSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
-  const allAcademicSources=investigation.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
+  const allAcademicSources=cleanSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
   const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
   const academicCandidateSources=allAcademicSources.filter(s=>{const m=meta(s.metadata);const p=number(m.academicCandidatePlausibility)??0;return !academicRecordSourceIds.has(s.id)&&decision(s)!=="REJECT"&&(decision(s)!=="REVIEW"||p>=25)});
   const academicRawLowConfidence=allAcademicSources.filter(s=>!academicRecordSourceIds.has(s.id)&&!academicCandidateSources.some(c=>c.id===s.id));
