@@ -71,7 +71,13 @@ function directProfileSurface(url:string){
     const u=new URL(url);
     const host=u.hostname.replace(/^www\./,"").toLowerCase();
     const p=u.pathname.split("/").filter(Boolean).map(x=>x.toLowerCase());
-    if(host.includes("facebook.com"))return p[0]!=="groups"&&p[0]!=="posts"&&p[0]!=="watch";
+    if(host.includes("facebook.com")){
+      const root=p[0]||"";
+      const directoryRoots=new Set(["public","people","search","groups","posts","watch","pages","events","marketplace","help"]);
+      if(directoryRoots.has(root))return false;
+      if(root==="profile.php")return Boolean(u.searchParams.get("id"));
+      return Boolean(root);
+    }
     if(host.includes("linkedin.com"))return p[0]==="in"||p[0]==="pub";
     if(host.includes("instagram.com"))return Boolean(p[0])&&!["p","reel","reels","explore","stories"].includes(p[0]);
     if(host.includes("reddit.com"))return p[0]==="user";

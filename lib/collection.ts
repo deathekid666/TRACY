@@ -297,9 +297,15 @@ async function runQueries(original:string,queries:string[],deep=true){
 }
 
 async function preserve(caseId:string,original:string,results:Ranked[],deepValidation=true,maxDeepChecks=MAX_DEEP_DOCUMENT_CHECKS,retainUnverifiedCandidates=false){
+  // Keep one best result per URL for ranking/deep-fetch decisions, but preserve
+  // every distinct search snippet for that URL as evidence. Different queries
+  // frequently expose different facts (for example a contact-bearing snippet).
   const byUrl=new Map<string,Ranked>();
   for(const r of results){const prev=byUrl.get(r.url);if(!prev||r.score>prev.score)byUrl.set(r.url,r)}
   const unique=[...byUrl.values()].sort((a,b)=>b.score-a.score);
+  const evidenceVariants=[...results]
+    .filter(r=>r.classification!=="NOISE")
+    .sort((a,b)=>b.score-a.score);
   let added=0,skipped=0,noise=0,deepValidated=0,deepRejected=0,retainedCandidates=0;
   const sourceIds:string[]=[];
   const retainedCandidateUrls=new Set<string>();
@@ -378,7 +384,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     added++;
   };
 
-  for(const result of unique.filter(r=>r.classification!=="NOISE"))await saveResult(result);
+  for(const result of evidenceVariants)await saveResult(result);
 
   const deepCandidates=deepValidation?unique.filter(r=>r.classification==="NOISE"&&(isDocumentLike(r)||isInstitutionLike(r)||isAccountLike(r)||isCommerceLike(r))).slice(0,maxDeepChecks):[];
   const checks=await Promise.all(deepCandidates.map(async result=>{
@@ -454,7 +460,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const scholarResults=mode==="deep"&&plan.kind==="PERSON"?await runScholarQueries(query):[];
   const independentResults=mode==="deep"&&plan.kind==="PERSON"?await runIndependentSources(query):[];
   const academicQueries=plan.kind==="PERSON"?buildAcademicQueries(query).slice(0,mode==="quick"?8:18):[];
-  const academicRun=academicQueries.length?await runQueries(query,academicQueries,false):{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
+  const academicRun=academicQueries.length?await runQueries(query,academicQueries,mode==="deep"):{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
   const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
   const academic=await preserve(caseId,query,academicRun.results,true,mode==="quick"?10:MAX_DEEP_DOCUMENT_CHECKS,true);
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
