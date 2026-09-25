@@ -284,8 +284,45 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
   const retainedCandidateUrls=new Set<string>();
 
   const saveResult=async(result:Ranked,content?:string,sha256?:string,contentType?:string,pageMeta?:{publishedAt?:string;modifiedAt?:string;imageUrl?:string;finalUrl?:string;fetchMode?:string})=>{
-    const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
-    if(exists){skipped++;return}
+    const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true,metadata:true}});
+    if(exists){
+      const current=(exists.metadata??{}) as Record<string,unknown>;
+      const previousScore=typeof current.identityScore==="number"?current.identityScore:0;
+      const shouldRefresh=result.score>=previousScore||String(current.classification??"")==="CANDIDATE";
+      if(shouldRefresh){
+        await db.source.update({
+          where:{id:exists.id},
+          data:{
+            title:sanitizePostgresText(result.title),
+            provider:sanitizePostgresText(result.provider),
+            metadata:sanitizePostgresJson({
+              ...current,
+              query:original,
+              discoveryQuery:result.discoveryQuery,
+              page:result.page,
+              connector:connector.id,
+              identityScore:Math.max(previousScore,result.score),
+              classification:result.classification,
+              reasons:result.reasons,
+              category:categoryFor(result),
+              academicCandidatePlausibility:academicCandidatePlausibility(original,result),
+              publishedAt:pageMeta?.publishedAt??result.publishedAt??current.publishedAt,
+              modifiedAt:pageMeta?.modifiedAt??current.modifiedAt,
+              imageUrl:pageMeta?.imageUrl??current.imageUrl,
+              finalUrl:pageMeta?.finalUrl??current.finalUrl,
+              fetchMode:pageMeta?.fetchMode??current.fetchMode,
+              documentLike:isDocumentLike(result),
+              institutionLike:isInstitutionLike(result),
+              accountLike:isAccountLike(result),
+              commerceLike:isCommerceLike(result)
+            }) as any
+          }
+        });
+      }
+      sourceIds.push(exists.id);
+      skipped++;
+      return
+    }
     const source=await db.source.create({data:{
       caseId,url:sanitizePostgresText(result.url),title:sanitizePostgresText(result.title),provider:sanitizePostgresText(result.provider),
       metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),academicCandidatePlausibility:academicCandidatePlausibility(original,result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
@@ -378,7 +415,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const first=await preserve(caseId,query,[...firstRun.results,...scholarResults,...independentResults],mode==="deep");
   const academic=await preserve(caseId,query,academicRun.results,true,mode==="quick"?10:MAX_DEEP_DOCUMENT_CHECKS,true);
   const existingForEnrichment=await db.source.findMany({where:{caseId},orderBy:{collectedAt:"desc"},take:80,select:{id:true,metadata:true}});
-  const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return !m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
+  const staleEnrichmentIds=existingForEnrichment.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.enrichmentVersion!==DISCOVERY_VERSION||!m.fetchMode||(!m.publishedAt&&!m.imageUrl)}).map(s=>s.id);
   const firstEnrichmentIds=[...new Set([...first.sourceIds,...academic.sourceIds,...staleEnrichmentIds])];
   const firstEnrichment=await enrichPublicSources(caseId,firstEnrichmentIds,12);
   const firstExtraction=await extractEvidenceEntities(caseId);
