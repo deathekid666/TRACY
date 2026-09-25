@@ -33,7 +33,8 @@ const RESERVED_PIVOT_HANDLES=new Set([
 function validPivotHandle(value:string){
   const v=value.toLowerCase().replace(/^@/,"").trim();
   const looksLikeDomain=/\.(?:com|net|org|io|co|ma|fr|uk|me|tv|dev|app)$/i.test(v);
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&!looksLikeDomain&&!RESERVED_PIVOT_HANDLES.has(v);
+  const hasLetter=/[a-z]/.test(v);
+  return /^[a-z0-9._-]{3,32}$/.test(v)&&hasLetter&&!looksLikeDomain&&!RESERVED_PIVOT_HANDLES.has(v);
 }
 
 function reservedPlatformArtifact(metadata:unknown){
