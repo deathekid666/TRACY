@@ -1,1 +1,1 @@
-export const DISCOVERY_VERSION="2026-09-25-identity-academic-v6";
+export const DISCOVERY_VERSION="2026-09-25-google-parity-v1";
