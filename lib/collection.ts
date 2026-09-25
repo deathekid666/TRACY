@@ -14,6 +14,7 @@ import { curateSources } from "@/lib/source-curation";
 import { buildAcademicQueries } from "@/lib/academic-discovery";
 import { extractAcademicIntelligence } from "@/lib/academic-intelligence";
 import { DISCOVERY_VERSION } from "@/lib/discovery-version";
+import { sanitizePostgresJson, sanitizePostgresText } from "@/lib/postgres-sanitize";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
@@ -267,18 +268,18 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     const exists=await db.source.findFirst({where:{caseId,url:result.url},select:{id:true}});
     if(exists){skipped++;return}
     const source=await db.source.create({data:{
-      caseId,url:result.url,title:result.title,provider:result.provider,
-      metadata:{query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)}
+      caseId,url:sanitizePostgresText(result.url),title:sanitizePostgresText(result.title),provider:sanitizePostgresText(result.provider),
+      metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
     }});
     await db.evidence.create({data:{
-      caseId,sourceId:source.id,title:result.title,content:result.snippet||"Public search result",
+      caseId,sourceId:source.id,title:sanitizePostgresText(result.title),content:sanitizePostgresText(result.snippet||"Public search result"),
       observedAt:result.observedAt?new Date(result.observedAt):new Date(),
-      metadata:{kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,publishedAt:result.publishedAt,identityScore:result.score,classification:result.classification,reasons:result.reasons}
+      metadata:sanitizePostgresJson({kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,publishedAt:result.publishedAt,identityScore:result.score,classification:result.classification,reasons:result.reasons})
     }});
     if(content){
       await db.evidence.create({data:{
-        caseId,sourceId:source.id,title:"Verified document/page content: "+result.title,content,sha256,observedAt:new Date(),
-        metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:result.url,contentType:contentType||"unknown",identityVerified:true,publishedAt:pageMeta?.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode}
+        caseId,sourceId:source.id,title:sanitizePostgresText("Verified document/page content: "+result.title),content:sanitizePostgresText(content),sha256,observedAt:new Date(),
+        metadata:sanitizePostgresJson({kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:result.url,contentType:contentType||"unknown",identityVerified:true,publishedAt:pageMeta?.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode})
       }});
     }else sourceIds.push(source.id);
     added++;
