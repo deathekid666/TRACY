@@ -14,7 +14,8 @@ import { curateSources } from "@/lib/source-curation";
 import { buildAcademicQueries } from "@/lib/academic-discovery";
 import { extractAcademicIntelligence } from "@/lib/academic-intelligence";
 import { DISCOVERY_VERSION } from "@/lib/discovery-version";
-import { sanitizePostgresJson, sanitizePostgresText } from "@/lib/postgres-sanitize";\nimport { buildContactEnrichmentPlan } from "@/lib/contact-discovery";
+import { sanitizePostgresJson, sanitizePostgresText } from "@/lib/postgres-sanitize";
+import { buildContactEnrichmentPlan } from "@/lib/contact-discovery";
 
 const connector=new SerperWebConnector();
 const independentConnectors=[new CrossrefConnector(),new OpenAlexConnector(),new InternetArchiveConnector()];
