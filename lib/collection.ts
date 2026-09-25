@@ -340,6 +340,22 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
           }
         });
       }
+
+      const snippet=sanitizePostgresText(result.snippet||"");
+      if(snippet&&snippet!=="Public search result"){
+        const duplicateSnippet=await db.evidence.findFirst({
+          where:{sourceId:exists.id,content:snippet},
+          select:{id:true}
+        });
+        if(!duplicateSnippet){
+          await db.evidence.create({data:{
+            caseId,sourceId:exists.id,title:sanitizePostgresText(result.title),content:snippet,
+            observedAt:result.observedAt?new Date(result.observedAt):new Date(),
+            metadata:sanitizePostgresJson({kind:"PUBLIC_SEARCH_RESULT",query:original,discoveryQuery:result.discoveryQuery,page:result.page,provider:result.provider,publishedAt:result.publishedAt,identityScore:result.score,classification:result.classification,reasons:result.reasons})
+          }});
+        }
+      }
+
       sourceIds.push(exists.id);
       skipped++;
       return
