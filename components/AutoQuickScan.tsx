@@ -17,7 +17,7 @@ export function AutoQuickScan({caseId,query,enabled,version}:{caseId:string;quer
 
     const key="tracy:auto-scan:"+caseId+":"+version;
     const previous=typeof window!=="undefined"?sessionStorage.getItem(key):null;
-    if(previous==="done")return;
+    if(previous==="done"||previous==="provider-unavailable")return;
 
     let cancelled=false;
 
@@ -33,7 +33,12 @@ export function AutoQuickScan({caseId,query,enabled,version}:{caseId:string;quer
           body:JSON.stringify({query,mode:"quick"})
         });
         const quickBody=await quick.json().catch(()=>({}));
-        if(!quick.ok)throw new Error(quickBody.detail||quickBody.error||"Quick scan failed");
+        if(!quick.ok){
+          if(quick.status===503&&quickBody.providerStatus==="unavailable"&&typeof window!=="undefined"){
+            sessionStorage.setItem(key,"provider-unavailable");
+          }
+          throw new Error(quickBody.detail||quickBody.error||"Quick scan failed");
+        }
         if(cancelled)return;
 
         router.refresh();
@@ -48,7 +53,12 @@ export function AutoQuickScan({caseId,query,enabled,version}:{caseId:string;quer
           body:JSON.stringify({query,mode:"deep"})
         });
         const deepBody=await deep.json().catch(()=>({}));
-        if(!deep.ok)throw new Error(deepBody.detail||deepBody.error||"Deep scan failed");
+        if(!deep.ok){
+          if(deep.status===503&&deepBody.providerStatus==="unavailable"&&typeof window!=="undefined"){
+            sessionStorage.setItem(key,"provider-unavailable");
+          }
+          throw new Error(deepBody.detail||deepBody.error||"Deep scan failed");
+        }
         if(cancelled)return;
 
         if(typeof window!=="undefined")sessionStorage.setItem(key,"done");
@@ -57,7 +67,7 @@ export function AutoQuickScan({caseId,query,enabled,version}:{caseId:string;quer
         router.refresh();
       }catch(err){
         if(cancelled)return;
-        if(typeof window!=="undefined")sessionStorage.removeItem(key);
+        if(typeof window!=="undefined"&&sessionStorage.getItem(key)!=="provider-unavailable")sessionStorage.removeItem(key);
         setState("error");
         setMessage(err instanceof Error?err.message:"Automatic scan failed");
       }
