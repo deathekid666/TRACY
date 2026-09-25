@@ -46,7 +46,7 @@ function canonicalPhone(raw:string){
 
 export async function extractEvidenceEntities(caseId:string){
   const stale=await db.entity.findMany({
-    where:{caseId,type:{in:["PHONE","DOMAIN","USERNAME"]}},
+    where:{caseId,type:{in:["EMAIL","PHONE","DOMAIN","USERNAME"]}},
     select:{id:true,metadata:true}
   });
   const staleIds=stale.filter(e=>{
@@ -79,7 +79,13 @@ export async function extractEvidenceEntities(caseId:string){
     const found:Array<{type:"EMAIL"|"USERNAME"|"PHONE";raw:string;canonical:string}>=[];
 
     for(const raw of [...new Set(text.match(EMAIL)??[])].slice(0,10)){
-      if(nearIdentity(text,raw,query,320)||sourceTitleMatchesIdentity)found.push({type:"EMAIL",raw,canonical:raw.toLowerCase()});
+      // A compact search-result snippet may safely inherit identity context from
+      // its matching result title. Long page captures may contain unrelated
+      // commenters/contacts, so those require the searched identity near the
+      // literal address itself.
+      const attributable=nearIdentity(text,raw,query,kind==="PUBLIC_SEARCH_RESULT"?320:520)
+        ||(kind==="PUBLIC_SEARCH_RESULT"&&sourceTitleMatchesIdentity);
+      if(attributable)found.push({type:"EMAIL",raw,canonical:raw.toLowerCase()});
     }
 
     if(kind==="PUBLIC_SEARCH_RESULT"){
@@ -153,9 +159,9 @@ export async function extractEvidenceEntities(caseId:string){
   await db.event.create({data:{
     caseId,
     title:"Evidence extraction run",
-    description:"Extracted "+entitiesCreated+" context-supported identifiers and "+linksCreated+" evidence links. Public contacts are accepted only when the searched identity is nearby or the source title identifies the person.",
+    description:"Extracted "+entitiesCreated+" context-supported identifiers and "+linksCreated+" evidence links. Full-page contacts require nearby identity evidence; title-only attribution is allowed only for compact public-search snippets.",
     occurredAt:new Date(),
-    metadata:{entitiesCreated,linksCreated,removedUnsafeEntities:staleIds.length,usernamePromotion:"identity-context-required",phoneExtraction:"context-only",domainBodyExtraction:"disabled"}
+    metadata:{entitiesCreated,linksCreated,removedUnsafeEntities:staleIds.length,emailExtraction:"page-near-identity; search-snippet-title-or-near-identity",usernamePromotion:"identity-context-required",phoneExtraction:"context-only",domainBodyExtraction:"disabled"}
   }});
 
   return {entitiesCreated,linksCreated,removedUnsafePhones:staleIds.length};
