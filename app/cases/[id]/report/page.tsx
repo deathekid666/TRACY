@@ -6,6 +6,7 @@ import {
   Sparkles, UserRound
 } from "lucide-react";
 import { db } from "@/lib/db";
+import { isReservedHandle, isReservedPivotArtifact } from "@/lib/identity-quality";
 
 export const dynamic="force-dynamic";
 
@@ -61,7 +62,7 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const person=c.entities.find(e=>e.type==="PERSON");
   const emails=c.entities.filter(e=>e.type==="EMAIL");
   const phones=c.entities.filter(e=>e.type==="PHONE");
-  const usernames=c.entities.filter(e=>e.type==="USERNAME");
+  const usernames=c.entities.filter(e=>e.type==="USERNAME"&&!isReservedHandle(e.canonical||e.label));
   const orgs=c.entities.filter(e=>e.type==="ORGANIZATION");
   const locations=c.entities.filter(e=>e.type==="LOCATION");
 
@@ -73,17 +74,18 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const academicMeta=meta(academicEvent?.metadata);
   const academicRecords=(Array.isArray(academicMeta.records)?academicMeta.records:[]) as AcademicRecord[];
 
-  const accounts=c.sources.filter(s=>category(s)==="PUBLIC_ACCOUNT");
-  const professional=c.sources.filter(s=>category(s)==="PROFESSIONAL");
-  const documents=c.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(category(s)));
+  const cleanSources=c.sources.filter(s=>!isReservedPivotArtifact(s.metadata));
+  const accounts=cleanSources.filter(s=>category(s)==="PUBLIC_ACCOUNT");
+  const professional=cleanSources.filter(s=>category(s)==="PROFESSIONAL");
+  const documents=cleanSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(category(s)));
   const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
   const academicCandidates=documents.filter(s=>{const m=meta(s.metadata);const p=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;return !academicRecordSourceIds.has(s.id)&&decision(s)!=="REJECT"&&(decision(s)!=="REVIEW"||p>=25)});
   const academicLowConfidence=documents.filter(s=>!academicRecordSourceIds.has(s.id)&&!academicCandidates.some(c=>c.id===s.id));
-  const relevant=c.sources.filter(s=>decision(s)==="KEEP");
-  const candidates=c.sources.filter(s=>decision(s)==="REVIEW"||decision(s)==="UNREVIEWED");
-  const lowConfidence=c.sources.filter(s=>decision(s)==="REJECT");
+  const relevant=cleanSources.filter(s=>decision(s)==="KEEP");
+  const candidates=cleanSources.filter(s=>decision(s)==="REVIEW"||decision(s)==="UNREVIEWED");
+  const lowConfidence=cleanSources.filter(s=>decision(s)==="REJECT");
 
-  const reportPhotoSources=c.sources.filter(source=>decision(source)!=="REJECT"&&["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(category(source)));
+  const reportPhotoSources=cleanSources.filter(source=>decision(source)!=="REJECT"&&["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(category(source)));
   const photos=Array.from(new Map(reportPhotoSources.map(source=>{
     const image=text(meta(source.metadata).imageUrl);
     return image?[image,{image,source}]:null;
@@ -95,7 +97,7 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const employmentFacts=facts.filter(f=>["EMPLOYMENT","ROLE","ORGANIZATION"].includes(f.type));
   const otherFacts=facts.filter(f=>!["BIRTH_DATE","ALIAS","EDUCATION","QUALIFICATION","EMPLOYMENT","ROLE","ORGANIZATION"].includes(f.type));
 
-  const sourceRows=[...c.sources].sort((a,b)=>{
+  const sourceRows=[...cleanSources].sort((a,b)=>{
     const rank=(v:string)=>v==="KEEP"?0:v==="REVIEW"||v==="UNREVIEWED"?1:2;
     const rd=rank(decision(a))-rank(decision(b));
     return rd!==0?rd:b.collectedAt.getTime()-a.collectedAt.getTime();
