@@ -142,7 +142,7 @@ function educationProfileEntries(text:string){
 export async function extractAcademicIntelligence(caseId:string,personName:string){
   const sources=await db.source.findMany({
     where:{caseId},
-    include:{evidence:{orderBy:{collectedAt:"desc"},take:8}},
+    include:{evidence:{orderBy:{collectedAt:"desc"},take:16}},
     orderBy:{collectedAt:"desc"},
     take:260
   });
