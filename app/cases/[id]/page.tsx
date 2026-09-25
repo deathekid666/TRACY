@@ -78,7 +78,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const documents=visibleSources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
   const allAcademicSources=investigation.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(sourceCategory(s)));
   const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
-  const academicCandidateSources=allAcademicSources.filter(s=>!academicRecordSourceIds.has(s.id));
+  const academicCandidateSources=allAcademicSources.filter(s=>{const m=meta(s.metadata);const p=number(m.academicCandidatePlausibility)??0;return !academicRecordSourceIds.has(s.id)&&decision(s)!=="REJECT"&&(decision(s)!=="REVIEW"||p>=25)});
+  const academicRawLowConfidence=allAcademicSources.filter(s=>!academicRecordSourceIds.has(s.id)&&!academicCandidateSources.some(c=>c.id===s.id));
   const professional=visibleSources.filter(s=>sourceCategory(s)==="PROFESSIONAL"||/linkedin|zoominfo|career|employer/i.test((s.title??"")+" "+s.url));
 
   const photos=Array.from(new Map(visibleSources.map(s=>{
@@ -189,7 +190,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             {academicCandidateSources.length>0&&<div className="mt-5">
               <div className="mb-3 text-[10px] font-semibold uppercase tracking-[.18em] text-amber-300">Academic candidates — visible, not confirmed</div>
               <div className="grid gap-3 lg:grid-cols-2">{academicCandidateSources.slice(0,16).map(source=>{const m=meta(source.metadata);const d=decision(source);return <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="rounded-xl border border-amber-400/10 bg-amber-400/[.025] p-3 hover:border-amber-400/25"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="line-clamp-2 text-sm">{source.title||source.url}</div><div className="mt-1 text-[10px] text-slate-600">{source.provider||"SOURCE"} · {text(m.discoveryQuery)||"academic search"}</div></div><span className="shrink-0 rounded-full border border-amber-500/30 px-2 py-1 text-[9px] uppercase tracking-wider text-amber-300">{d}</span></div>{text(m.curatedReason)&&<div className="mt-2 line-clamp-2 text-[10px] text-slate-500">{text(m.curatedReason)}</div>}</a>})}</div>
-              {academicCandidateSources.length>16&&<div className="mt-3 text-xs text-slate-500">+ {academicCandidateSources.length-16} more academic candidates in Sources / Report.</div>}
+              {academicCandidateSources.length>16&&<div className="mt-3 text-xs text-slate-500">+ {academicCandidateSources.length-16} more plausible academic candidates in Sources / Report.</div>}{academicRawLowConfidence.length>0&&<div className="mt-3 text-xs text-slate-600">{academicRawLowConfidence.length} low-plausibility academic search results are kept in the complete source register but removed from the main dossier.</div>}
             </div>}
 
             {!academicRecords.length&&!academicCandidateSources.length&&<div className="mt-5 rounded-xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No academic source has been gathered in this case yet. Run Quick or Deep scan; academic searches are now part of both.</div>}
