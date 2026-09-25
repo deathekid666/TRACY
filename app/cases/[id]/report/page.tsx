@@ -77,7 +77,8 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const professional=c.sources.filter(s=>category(s)==="PROFESSIONAL");
   const documents=c.sources.filter(s=>["DOCUMENT","ACADEMIC","EDUCATION"].includes(category(s)));
   const academicRecordSourceIds=new Set(academicRecords.map(r=>r.sourceId));
-  const academicCandidates=documents.filter(s=>!academicRecordSourceIds.has(s.id));
+  const academicCandidates=documents.filter(s=>{const m=meta(s.metadata);const p=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;return !academicRecordSourceIds.has(s.id)&&decision(s)!=="REJECT"&&(decision(s)!=="REVIEW"||p>=25)});
+  const academicLowConfidence=documents.filter(s=>!academicRecordSourceIds.has(s.id)&&!academicCandidates.some(c=>c.id===s.id));
   const relevant=c.sources.filter(s=>decision(s)==="KEEP");
   const candidates=c.sources.filter(s=>decision(s)==="REVIEW"||decision(s)==="UNREVIEWED");
   const lowConfidence=c.sources.filter(s=>decision(s)==="REJECT");
@@ -164,8 +165,9 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
             {text(m.curatedReason)&&<div className="mt-3 text-[10px] leading-5 text-slate-500">{text(m.curatedReason)}</div>}
           </a>})}
 
-          {!academicRecords.length&&!academicCandidates.length&&<div className="rounded-2xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No academic source has been gathered yet.</div>}
+          {!academicRecords.length&&!academicCandidates.length&&<div className="rounded-2xl border border-dashed border-slate-800 p-5 text-sm text-slate-500">No plausible academic source has been gathered yet.</div>}
         </div>
+        {academicLowConfidence.length>0&&<div className="mt-4 text-xs text-slate-600">{academicLowConfidence.length} low-plausibility academic search results remain available in the Complete source register below.</div>}
         {educationFacts.length>0&&<div className="mt-5 grid gap-3 md:grid-cols-2">{educationFacts.map((fact,i)=><FactCard key={i} fact={fact}/>)}</div>}
       </section>
 
