@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { sanitizePostgresText } from "@/lib/postgres-sanitize";
 
 const MAX_HTML_BYTES=1_000_000;
 const MAX_PDF_BYTES=8_000_000;
@@ -141,7 +142,7 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
     const bytes=await readLimited(response,MAX_READER_BYTES);
     if(!bytes||!bytes.length)return null;
     const raw=bytes.toString("utf8");
-    const text=raw.replace(/\s+/g," ").trim().slice(0,240_000);
+    const text=sanitizePostgresText(raw.replace(/\s+/g," ").trim().slice(0,240_000));
     if(!text)return null;
 
     const imageMatch=raw.match(/(?:^|\n)Image:\s*(https?:\/\/\S+)/i);
@@ -191,7 +192,7 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
       try{
         const pdfParse=(await import("pdf-parse")).default;
         const parsed=await pdfParse(bytes);
-        text=(parsed.text||"").replace(/\s+/g," ").trim().slice(0,220_000);
+        text=sanitizePostgresText((parsed.text||"").replace(/\s+/g," ").trim().slice(0,220_000));
         const info=(parsed.info??{}) as Record<string,unknown>;
         publishedAt=parseDate(typeof info.CreationDate==="string"?info.CreationDate:undefined);
         modifiedAt=parseDate(typeof info.ModDate==="string"?info.ModDate:undefined)||modifiedAt;
@@ -200,7 +201,7 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
       }
     }else{
       const html=bytes.toString("utf8");
-      text=textFromHtml(html);
+      text=sanitizePostgresText(textFromHtml(html));
       const metadata=htmlMetadata(html,finalUrl);
       publishedAt=metadata.publishedAt;
       modifiedAt=metadata.modifiedAt||modifiedAt;
