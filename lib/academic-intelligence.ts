@@ -64,10 +64,16 @@ function capture(text:string,pattern:RegExp,max=120){
 
 function institutionFrom(text:string,title:string){
   const combined=asciiDigits((title+" "+text.slice(0,5000)).replace(/\s+/g," "));
+  const faculty=capture(
+    combined,
+    /((?:Faculté|Faculte|Faculty)[^|•]{2,120}?)(?=\s(?:Université|University|Année|Annee|Date|Semestre|Session|Filière|Filiere|Module|N°|No\b|PROCES|Résultat)|$)/i,
+    140
+  );
+  if(faculty)return faculty;
   return capture(
     combined,
-    /((?:Université|University|Faculté|Faculty|École|Ecole|School|Institut|Institute)[^|•]{2,100}?)(?=\s(?:Année|Annee|Semestre|Session|Filière|Filiere|Module|N°|No\b)|$)/i,
-    120
+    /((?:Université|University|École|Ecole|School|Institut|Institute)[^|•]{2,110}?)(?=\s(?:Année|Annee|Date|Semestre|Session|Filière|Filiere|Module|N°|No\b|PROCES|Résultat)|$)/i,
+    130
   );
 }
 
@@ -86,7 +92,7 @@ function identityContext(text:string,name:string,radius=2200){
 }
 
 function studentRecordIdNearName(text:string,name:string){
-  const cleaned=asciiDigits(text).replace(/\s+/g," ");
+  const cleaned=asciiDigits(text);
   const nameVariants=[name.trim(),name.trim().split(/\s+/).reverse().join(" ")];
   for(const variant of nameVariants){
     const escaped=variant.replace(/[.*+?^$()|[\]\\]/g,"\\function studentRecordIdNearName(text:string,name:string){
@@ -103,8 +109,8 @@ function studentRecordIdNearName(text:string,name:string){
   const matches=normalizedPrefix.match(/\b\d{6,12}\b/g);
   return matches?.at(-1);
 }").replace(/\s+/g,"\\s+");
-    const before=new RegExp("(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})[^\\n]{0,90}"+escaped,"i");
-    const after=new RegExp(escaped+"[^\\n]{0,90}(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})","i");
+    const before=new RegExp("(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})[^\\r\\n]{0,80}"+escaped,"i");
+    const after=new RegExp(escaped+"[^\\r\\n]{0,80}(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})","i");
     const match=cleaned.match(before)||cleaned.match(after);
     if(match?.[1])return match[1];
   }
@@ -172,9 +178,9 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
       ||capture(context,/\b((?:19|20)\d{2}\s*\/\s*(?:19|20)\d{2})\b/i,20)
       ||capture(sourceText,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20);
     const semester=capture(context,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20)||capture(sourceText,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20);
-    const session=capture(context,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9' -]{0,60})/i,70)||capture(sourceText,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9' -]{0,60})/i,70);
+    const session=capture(context,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ]+|\d{1,2})\b/i,30)||capture(sourceText,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ]+|\d{1,2})\b/i,30);
     const program=capture(context,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100)||capture(sourceText,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
-    const module=capture(context,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100)||capture(sourceText,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
+    const module=capture(context,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90}?)(?=\s+(?:FACULTE|Faculté|Faculte|Université|University|N°|No\b|PROCES)|$)/i,100)||capture(sourceText,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90}?)(?=\s+(?:FACULTE|Faculté|Faculte|Université|University|N°|No\b|PROCES)|$)/i,100);
     const institution=institutionFrom(context,source.title??"")||institutionFrom(sourceText,source.title??"");
     const studentRecordId=studentRecordIdNearName(context,personName);
 
