@@ -23,6 +23,26 @@ const MAX_RECURSIVE_SEARCHES=4;
 const MAX_SERPER_CALLS=30;
 const MAX_DEEP_DOCUMENT_CHECKS=24;
 const MAX_PLATFORM_CALLS=30;
+
+const RESERVED_PIVOT_HANDLES=new Set([
+  "public","profile","profiles","people","user","users","help","support","groups","pages",
+  "reel","reels","explore","community","communities","business","search","topics","settings"
+]);
+
+function validPivotHandle(value:string){
+  const v=value.toLowerCase().replace(/^@/,"").trim();
+  return /^[a-z0-9._-]{3,32}$/.test(v)&&!RESERVED_PIVOT_HANDLES.has(v);
+}
+
+function reservedPlatformArtifact(metadata:unknown){
+  const m=(metadata??{}) as Record<string,unknown>;
+  const q=typeof m.discoveryQuery==="string"?m.discoveryQuery:"";
+  if(!q.startsWith("PLATFORM "))return false;
+  for(const handle of RESERVED_PIVOT_HANDLES){
+    if(q.includes('"'+handle+'"'))return true;
+  }
+  return false;
+}
 const SERPER_BATCH_SIZE=4;
 const SERPER_BATCH_DELAY_MS=1100;
 
@@ -401,6 +421,12 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 }
 
 export async function collectPublicSources(caseId:string,query:string,mode:"quick"|"deep"="deep"){
+  const badPivotSources=await db.source.findMany({where:{caseId},select:{id:true,metadata:true}});
+  const badPivotIds=badPivotSources.filter(s=>reservedPlatformArtifact(s.metadata)).map(s=>s.id);
+  if(badPivotIds.length){
+    await db.evidence.deleteMany({where:{sourceId:{in:badPivotIds}}});
+    await db.source.deleteMany({where:{id:{in:badPivotIds}}});
+  }
   const stale=await db.source.findMany({where:{caseId,provider:{startsWith:"Google / Serper"}},select:{id:true,metadata:true}});
   const staleIds=stale.filter(s=>{const m=(s.metadata??{}) as Record<string,unknown>;return m.classification==="UNVERIFIED"}).map(s=>s.id);
   if(staleIds.length){await db.evidence.deleteMany({where:{sourceId:{in:staleIds}}});await db.source.deleteMany({where:{id:{in:staleIds}}});}
@@ -426,7 +452,22 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     take:12,
     select:{canonical:true,label:true}
   });
-  const usernameSeeds=[...new Set(usernameEntities.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
+  const currentUsernameSeeds=usernameEntities
+    .map(e=>(e.canonical||e.label).replace(/^@/,"").trim())
+    .filter(validPivotHandle);
+
+  const priorCases=plan.kind==="PERSON"?await db.case.findMany({
+    where:{id:{not:caseId},title:{equals:query,mode:"insensitive"}},
+    orderBy:{updatedAt:"desc"},
+    take:8,
+    include:{entities:{where:{type:"USERNAME"},take:20}}
+  }):[];
+
+  const priorUsernameSeeds=priorCases.flatMap(prior=>prior.entities
+    .map(e=>(e.canonical||e.label).replace(/^@/,"").trim())
+    .filter(validPivotHandle));
+
+  const usernameSeeds=[...new Set([...currentUsernameSeeds,...priorUsernameSeeds])].slice(0,12);
 
   const emptyPlatformRun={results:[] as Ranked[],calls:0,failedCalls:0,queries:[] as PlatformDiscoveryQuery[]};
   const platformRun1=mode==="deep"&&plan.kind==="PERSON"?await runPlatformDiscovery(query,usernameSeeds,true):emptyPlatformRun;
@@ -440,7 +481,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     take:20,
     select:{canonical:true,label:true}
   });
-  const allUsernameSeedsAfterRound1=[...new Set(usernameEntitiesAfterRound1.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(Boolean))];
+  const allUsernameSeedsAfterRound1=[...new Set(usernameEntitiesAfterRound1.map(e=>(e.canonical||e.label).replace(/^@/,"").trim()).filter(validPivotHandle))];
   const newUsernameSeeds=allUsernameSeedsAfterRound1.filter(seed=>!usernameSeeds.includes(seed));
 
   const platformRun2=mode==="deep"&&plan.kind==="PERSON"&&newUsernameSeeds.length?await runPlatformDiscovery(query,newUsernameSeeds,false):emptyPlatformRun;
@@ -477,7 +518,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     caseId,title:"Deep public-footprint discovery",
     description:`${mode==="quick"?"Quick":"Deep"} scan used ${serperCalls} rate-limited public-web searches; ${failedSerperCalls} calls failed after retries. Preserved ${added} identity-supported sources, verified ${deepValidated} names inside fetched documents/pages, rejected ${deepRejected} deep candidates and filtered ${noise} unrelated results. Removed ${staleIds.length} stale unverified sources.`,
     occurredAt:new Date(),
-    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,initialQueries,academicQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
+    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,initialQueries,academicQueries,pivotQueries,usernameSeeds,newUsernameSeeds,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,removedReservedPivotArtifacts:badPivotIds.length,firstEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
   }});
 
   return {mode,results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicCandidatesRetained:academic.retainedCandidates,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
