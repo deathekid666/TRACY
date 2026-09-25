@@ -169,6 +169,14 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
 
 export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
   if(!isPublicHttpUrl(url))return null;
+
+  try{
+    const host=new URL(url).hostname.toLowerCase();
+    if(/(^|\.)scribd\.com$|(^|\.)linkedin\.com$/.test(host)){
+      const reader=await fetchReaderFallback(url);
+      if(reader&&reader.text.length>=300)return reader;
+    }
+  }catch{}
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
   try{
     const response=await fetch(url,{redirect:"follow",signal:controller.signal,cache:"no-store",headers:{"User-Agent":"TRACY-PublicResearch/1.0"}});
