@@ -176,9 +176,10 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
     const academicYear=capture(context,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20)
       ||capture(context,/\b((?:19|20)\d{2}\s*\/\s*(?:19|20)\d{2})\b/i,20)
       ||capture(sourceText,/(?:Année|Annee)\s+Universitaire\s*[:\-]?\s*(\d{4}\s*\/\s*\d{4})/i,20);
-    const semester=capture(context,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20)||capture(sourceText,/Semestre\s*[:\-]?\s*(S?\s*\d{1,2})/i,20);
+    const semester=capture(context,/(?:Semestre|Semester)\s*[:\-]?\s*(S?\s*\d{1,2}|first|second|third|fourth)/i,20)||capture(sourceText,/(?:Semestre|Semester)\s*[:\-]?\s*(S?\s*\d{1,2}|first|second|third|fourth)/i,20);
     const session=capture(context,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ]+|\d{1,2})\b/i,30)||capture(sourceText,/Session\s*[:\-]?\s*([A-Za-zÀ-ÿ]+|\d{1,2})\b/i,30);
-    const program=capture(context,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100)||capture(sourceText,/(?:Filière|Filiere)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90})/i,100);
+    const programPattern=/(?:Filière|Filiere|Program(?:me)?)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90}?)(?=\s+(?:Module|Semestre|Semester|Session|Année|Annee|N°|No\b|PROCES|FACULTE|Faculté|Faculte|Université|University|\d{6,12}\b)|$)/i;
+    const program=capture(context,programPattern,100)||capture(sourceText,programPattern,100);
     const module=capture(context,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90}?)(?=\s+(?:FACULTE|Faculté|Faculte|Université|University|N°|No\b|PROCES)|$)/i,100)||capture(sourceText,/(?:Module|Elément pédagogique|Element pedagogique)\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9&' .\/-]{2,90}?)(?=\s+(?:FACULTE|Faculté|Faculte|Université|University|N°|No\b|PROCES)|$)/i,100);
     const institution=institutionFrom(context,source.title??"")||institutionFrom(sourceText,source.title??"");
     const studentRecordId=studentRecordIdNearName(context,personName);
