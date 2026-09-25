@@ -82,11 +82,12 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const academicRawLowConfidence=allAcademicSources.filter(s=>!academicRecordSourceIds.has(s.id)&&!academicCandidateSources.some(c=>c.id===s.id));
   const professional=visibleSources.filter(s=>sourceCategory(s)==="PROFESSIONAL"||/linkedin|zoominfo|career|employer/i.test((s.title??"")+" "+s.url));
 
-  const photos=Array.from(new Map(visibleSources.map(s=>{
+  const photoSources=visibleSources.filter(s=>["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(sourceCategory(s)));
+  const photos=Array.from(new Map(photoSources.map(s=>{
     const m=meta(s.metadata);
     const image=text(m.imageUrl);
     return image?[image,{image,source:s}]:null;
-  }).filter(Boolean) as Array<[string,{image:string;source:(typeof visibleSources)[number]}]>).values()).slice(0,6);
+  }).filter(Boolean) as Array<[string,{image:string;source:(typeof photoSources)[number]}]>).values()).slice(0,6);
 
   const latestDiscovery=investigation.events.find(e=>e.title==="Deep public-footprint discovery");
   const discoveryMeta=meta(latestDiscovery?.metadata);
