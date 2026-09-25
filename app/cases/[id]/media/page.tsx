@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { isReservedPivotArtifact } from "@/lib/identity-quality";
 
 export const dynamic="force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function MediaPage({params}:{params:Promise<{id:string}>}){
  const {id}=await params;
  const c=await db.case.findUnique({where:{id},include:{sources:{orderBy:{collectedAt:"desc"},take:160}}});
  if(!c) notFound();
- const media=c.sources.flatMap(source=>{const m=meta(source.metadata);const image=typeof m.imageUrl==="string"?m.imageUrl:"";const decision=String(m.curatedDecision??"UNREVIEWED");const category=String(m.curatedCategory??m.category??"GENERAL");return image&&decision!=="REJECT"&&["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(category)?[{source,image,publishedAt:m.publishedAt}]:[]});
+ const media=c.sources.filter(source=>!isReservedPivotArtifact(source.metadata)).flatMap(source=>{const m=meta(source.metadata);const image=typeof m.imageUrl==="string"?m.imageUrl:"";const decision=String(m.curatedDecision??"UNREVIEWED");const category=String(m.curatedCategory??m.category??"GENERAL");return image&&decision!=="REJECT"&&["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(category)?[{source,image,publishedAt:m.publishedAt}]:[]});
  const unique=[...new Map(media.map(item=>[item.image,item])).values()];
  return <main className="min-h-screen p-6 md:p-10"><div className="mx-auto max-w-7xl">
   <Link href={`/cases/${id}`} className="text-sm text-slate-400">← {c.title}</Link>
