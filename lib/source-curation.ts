@@ -150,10 +150,17 @@ export async function curateSources(caseId:string,useAi=true){
 
     const category=categoryFrom(source);
     const sourceClassification=String(m.classification??"");
+    const academicPlausibility=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;
     const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
-    const decision:CuratedDecision=isAcademicCandidate?"REVIEW":(score>=75?"KEEP":score>=45?"REVIEW":"REJECT");
-    if(isAcademicCandidate)reasons.push("academic/document candidate retained for analyst review");
-    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score,category,snippet});
+    const decision:CuratedDecision=isAcademicCandidate
+      ?(academicPlausibility>=25?"REVIEW":"REJECT")
+      :(score>=75?"KEEP":score>=45?"REVIEW":"REJECT");
+    if(isAcademicCandidate){
+      reasons.push(academicPlausibility>=25
+        ?"academic/document lead retained for analyst review"
+        :"low-plausibility academic search result kept only in raw sources");
+    }
+    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet});
 
     if(decision!=="REJECT"&&aiCandidates.length<36){
       aiCandidates.push({
