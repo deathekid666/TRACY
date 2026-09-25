@@ -74,18 +74,13 @@ export async function buildContactEnrichmentPlan(caseId:string,personName:string
   const sourceHosts=unique(supported.map(s=>hostOf(s.url)).filter(Boolean)).slice(0,8);
 
   const name=personName.replace(/"/g," ").replace(/\s+/g," ").trim();
-  const queries:string[]=[
-    `site:linkedin.com/in "${name}" email`,
-    `site:linkedin.com/in "${name}" gmail`,
-    `"${name}" email contact`,
-    `"${name}" gmail`,
-    `"${name}" "@gmail.com"`,
-    `site:github.com "${name}" email`,
-    `site:gitlab.com "${name}" email`,
-    `site:about.me "${name}" email`,
-    `site:linktr.ee "${name}" email`,
-    `filetype:pdf "${name}" email`
-  ];
+  const queries:string[]=[];
+
+  // Confirmed public surfaces first: these are the highest-value, lowest-noise pivots.
+  for(const host of sourceHosts){
+    queries.push(`site:${host} "${name}" email`);
+    queries.push(`site:${host} "${name}" contact`);
+  }
 
   for(const username of usernames){
     queries.push(`"${name}" "${username}" email`);
@@ -93,9 +88,18 @@ export async function buildContactEnrichmentPlan(caseId:string,personName:string
     queries.push(`"${name}" "@${username}" contact`);
   }
 
-  for(const host of sourceHosts){
-    queries.push(`site:${host} "${name}" email`);
-  }
+  // Name-only fallbacks remain behind confirmed pivots and still pass through
+  // collection.ts's full-name identity gate before any evidence is persisted.
+  queries.push(
+    `site:linkedin.com/in "${name}" email`,
+    `site:linkedin.com/in "${name}" gmail`,
+    `"${name}" email contact`,
+    `"${name}" gmail`,
+    `"${name}" "@gmail.com"`,
+    `filetype:pdf "${name}" email`,
+    `"${name}" phone contact`,
+    `"${name}" telephone contact`
+  );
 
   return {
     queries:unique(queries).slice(0,Math.max(0,maxQueries)),
