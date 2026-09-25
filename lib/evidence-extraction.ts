@@ -85,8 +85,7 @@ export async function extractEvidenceEntities(caseId:string){
       const p=u.pathname.split("/").filter(Boolean);
       let user="";
 
-      if(/linkedin\.com$/.test(host)&&p[0]==="in")user=p[1]||"";
-      else if(/reddit\.com$/.test(host)&&p[0]==="user")user=p[1]||"";
+      if(/reddit\.com$/.test(host)&&p[0]==="user")user=p[1]||"";
       else if(/snapchat\.com$/.test(host)&&p[0]==="add")user=p[1]||"";
       else if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))user=(p[0]||"").replace(/^@/,"");
       else if(/facebook\.|instagram\.|pinterest\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))user=p[0]||"";
