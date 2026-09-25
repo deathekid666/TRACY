@@ -165,7 +165,7 @@ export async function curateSources(caseId:string,useAi=true){
     include:{
       entities:true,
       sources:{
-        include:{evidence:{orderBy:{collectedAt:"desc"},take:3}},
+        include:{evidence:{orderBy:{collectedAt:"desc"},take:12}},
         orderBy:{collectedAt:"desc"},
         take:220
       }
