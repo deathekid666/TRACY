@@ -19,6 +19,16 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
 
   try{
     const outcome=await collectPublicSources(id,query,mode);
+    if(outcome.providerStatus==="unavailable"){
+      return NextResponse.json({
+        error:"Search provider unavailable",
+        detail:"Fresh web discovery could not run because the primary search provider failed on every request. Existing case evidence was preserved; this is not a zero-results scan.",
+        providerStatus:outcome.providerStatus,
+        searchProvider:outcome.searchProvider,
+        failedSearchCalls:outcome.failedSerperCalls,
+        totalSearchCalls:outcome.serperCalls
+      },{status:503});
+    }
     return NextResponse.json({
       count:outcome.added,
       found:outcome.results.length,
@@ -27,6 +37,10 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
       queries:outcome.queries,
       filtered:outcome.noise,
       mode:outcome.mode,
+      providerStatus:outcome.providerStatus,
+      searchProvider:outcome.searchProvider,
+      failedSearchCalls:outcome.failedSerperCalls,
+      totalSearchCalls:outcome.serperCalls,
       curation:outcome.curation
     });
   }catch(error){
