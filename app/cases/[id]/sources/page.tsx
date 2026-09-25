@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { SourceLibrary, type SourceLibraryItem } from "@/components/SourceLibrary";
+import { isReservedPivotArtifact } from "@/lib/identity-quality";
 
 function meta(value:unknown){return (value??{}) as Record<string,unknown>}
 
@@ -12,7 +13,7 @@ export default async function Sources({params}:{params:Promise<{id:string}>}){
   const c=await db.case.findUnique({where:{id},include:{sources:{orderBy:{collectedAt:"desc"}}}});
   if(!c) notFound();
 
-  const items:SourceLibraryItem[]=c.sources.map(s=>{
+  const items:SourceLibraryItem[]=c.sources.filter(s=>!isReservedPivotArtifact(s.metadata)).map(s=>{
     const m=meta(s.metadata);
     const decisionRaw=String(m.curatedDecision??"UNREVIEWED");
     const decision:SourceLibraryItem["decision"]=
