@@ -24,6 +24,18 @@ function nearIdentity(text:string,value:string,query:string,radius=180){
   const qt=tokens(query);
   return qt.length>0&&qt.every(t=>wt.has(t));
 }
+const RESERVED_USERNAMES=new Set([
+  "public","publications","public-profile","profile","profiles","people","user","users","member","members",
+  "help","support","privacy","legal","login","signin","signup","register","groups","group","pages","page",
+  "reel","reels","stories","story","explore","directory","about","business","marketplace","watch","events",
+  "settings","search","topics","topic","communities","community"
+]);
+
+function validUsername(value:string){
+  const v=value.toLowerCase().replace(/^@/,"").trim();
+  return /^[a-z0-9._-]{3,32}$/.test(v)&&!RESERVED_USERNAMES.has(v);
+}
+
 function canonicalPhone(raw:string){
   const trimmed=raw.trim();
   const plus=trimmed.startsWith("+");
@@ -87,14 +99,22 @@ export async function extractEvidenceEntities(caseId:string){
 
       if(/reddit\.com$/.test(host)&&p[0]==="user")user=p[1]||"";
       else if(/snapchat\.com$/.test(host)&&p[0]==="add")user=p[1]||"";
-      else if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))user=(p[0]||"").replace(/^@/,"");
-      else if(/facebook\.|instagram\.|pinterest\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))user=p[0]||"";
+      else if(/tiktok\.com$|threads\.net$/.test(host))user=(p[0]||"").replace(/^@/,"");
+      else if(/youtube\.com$/.test(host)&&((p[0]||"").startsWith("@")))user=(p[0]||"").replace(/^@/,"");
+      else if(/facebook\./.test(host)){
+        if(p[0]==="public"&&p[1])user=p[1];
+        else if(!["groups","pages","help","watch","events","marketplace","profile.php"].includes((p[0]||"").toLowerCase()))user=p[0]||"";
+      }
+      else if(/instagram\./.test(host)){
+        if(!["reel","reels","p","explore","stories","accounts","about","help"].includes((p[0]||"").toLowerCase()))user=p[0]||"";
+      }
+      else if(/pinterest\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))user=p[0]||"";
       else if(/\.tumblr\.com$/.test(host)){
         const sub=host.split(".")[0];
         if(sub&&sub!=="www")user=sub;
       }
 
-      if(user&&/^[a-z0-9._-]{3,32}$/i.test(user)){
+      if(user&&validUsername(user)){
         const handleIsContextual=sourceTitleMatchesIdentity||nearIdentity(text,user,query,320);
         if(handleIsContextual){
           found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
@@ -103,7 +123,7 @@ export async function extractEvidenceEntities(caseId:string){
     }catch{}
 
     for(const raw of [...new Set(text.match(USERNAME)??[])].slice(0,10)){
-      if(nearIdentity(text,raw,query))found.push({type:"USERNAME",raw,canonical:raw.slice(1).toLowerCase()});
+      if(validUsername(raw)&&nearIdentity(text,raw,query))found.push({type:"USERNAME",raw,canonical:raw.slice(1).toLowerCase()});
     }
 
     for(const itemFound of found){
