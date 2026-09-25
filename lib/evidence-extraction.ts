@@ -102,7 +102,7 @@ export async function extractEvidenceEntities(caseId:string){
       else if(/tiktok\.com$|threads\.net$/.test(host))user=(p[0]||"").replace(/^@/,"");
       else if(/youtube\.com$/.test(host)&&((p[0]||"").startsWith("@")))user=(p[0]||"").replace(/^@/,"");
       else if(/facebook\./.test(host)){
-        if(p[0]==="public"&&p[1])user=p[1];
+        if(p[0]==="public")user="";
         else if(!["groups","pages","help","watch","events","marketplace","profile.php"].includes((p[0]||"").toLowerCase()))user=p[0]||"";
       }
       else if(/instagram\./.test(host)){
