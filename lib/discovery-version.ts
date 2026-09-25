@@ -1,1 +1,1 @@
-export const DISCOVERY_VERSION="2026-09-24-academic-v2";
+export const DISCOVERY_VERSION="2026-09-25-identity-academic-v3";
