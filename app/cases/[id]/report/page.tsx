@@ -83,10 +83,11 @@ export default async function ReportPage({params}:{params:Promise<{id:string}>})
   const candidates=c.sources.filter(s=>decision(s)==="REVIEW"||decision(s)==="UNREVIEWED");
   const lowConfidence=c.sources.filter(s=>decision(s)==="REJECT");
 
-  const photos=Array.from(new Map(c.sources.map(source=>{
+  const reportPhotoSources=c.sources.filter(source=>decision(source)!=="REJECT"&&["PUBLIC_ACCOUNT","PROFESSIONAL"].includes(category(source)));
+  const photos=Array.from(new Map(reportPhotoSources.map(source=>{
     const image=text(meta(source.metadata).imageUrl);
     return image?[image,{image,source}]:null;
-  }).filter(Boolean) as Array<[string,{image:string;source:(typeof c.sources)[number]}]>).values()).slice(0,12);
+  }).filter(Boolean) as Array<[string,{image:string;source:(typeof reportPhotoSources)[number]}]>).values()).slice(0,12);
 
   const dob=facts.find(f=>f.type==="BIRTH_DATE");
   const aliases=facts.filter(f=>f.type==="ALIAS");
