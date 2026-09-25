@@ -41,19 +41,17 @@ function tokens(value:string){
 }
 
 function identityMatch(text:string,name:string){
-  const tt=tokens(text);
+  const normalized=norm(text);
   const nt=tokens(name);
-  if(nt.length<2||tt.length<2)return false;
-  const first=nt[0],last=nt[nt.length-1];
-  for(let i=0;i<tt.length;i++){
-    if(tt[i]===first){
-      for(let j=i;j<Math.min(tt.length,i+10);j++)if(tt[j]===last)return true;
-    }
-    if(tt[i]===last){
-      for(let j=i;j<Math.min(tt.length,i+10);j++)if(tt[j]===first)return true;
-    }
-  }
-  return false;
+  if(nt.length<2)return false;
+  const forward=nt.join(" ");
+  const reverse=[...nt].reverse().join(" ");
+  if(normalized.includes(forward)||normalized.includes(reverse))return true;
+
+  // Some extracted academic PDFs concatenate adjacent rows/names.
+  // Match the complete compact first+last form so a single common token is never enough.
+  const compact=normalized.replace(/\s+/g,"");
+  return compact.includes(nt.join(""))||compact.includes([...nt].reverse().join(""));
 }
 
 function capture(text:string,pattern:RegExp,max=120){
@@ -79,12 +77,27 @@ function institutionFrom(text:string,title:string){
 
 function identityContext(text:string,name:string,radius=2200){
   const normalized=norm(text);
-  const variants=[norm(name),norm(name.split(/\s+/).reverse().join(" "))];
+  const nt=tokens(name);
+  const variants=[nt.join(" "),[...nt].reverse().join(" ")];
   let normalizedIndex=-1;
   for(const variant of variants){
     const i=normalized.indexOf(variant);
     if(i>=0){normalizedIndex=i;break}
   }
+
+  if(normalizedIndex<0&&nt.length>=2){
+    const compact=normalized.replace(/\s+/g,"");
+    const compactVariants=[nt.join(""),[...nt].reverse().join("")];
+    let compactIndex=-1;
+    for(const variant of compactVariants){
+      const i=compact.indexOf(variant);
+      if(i>=0){compactIndex=i;break}
+    }
+    if(compactIndex>=0){
+      normalizedIndex=Math.floor(compactIndex*(normalized.length/Math.max(1,compact.length)));
+    }
+  }
+
   if(normalizedIndex<0)return "";
   const ratio=text.length/Math.max(1,normalized.length);
   const rawIndex=Math.floor(normalizedIndex*ratio);
