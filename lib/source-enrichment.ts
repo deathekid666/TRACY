@@ -14,10 +14,23 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPa
   const candidateIds=sourceIds.slice(0,MAX_CANDIDATES);
   const sources=await db.source.findMany({where:{caseId,id:{in:candidateIds}}});
   const order=new Map(sourceIds.map((id,index)=>[id,index]));
+  function priority(source:(typeof sources)[number]){
+    const m=(source.metadata??{}) as Record<string,unknown>;
+    const category=String(m.curatedCategory??m.category??"GENERAL");
+    const hay=((source.title??"")+" "+source.url).toLowerCase();
+    let score=0;
+    if(category==="PROFESSIONAL"||/linkedin\.com|zoominfo\.com/.test(hay))score+=90;
+    if(["ACADEMIC","EDUCATION","DOCUMENT"].includes(category)||/scribd\.com|\.ac\.ma|\.edu\b/.test(hay))score+=80;
+    if(classification(source)==="STRONG")score+=35;
+    else if(classification(source)==="POSSIBLE")score+=25;
+    else if(classification(source)==="CANDIDATE")score+=15;
+    if(/email|contact|gmail/.test(hay))score+=20;
+    return score;
+  }
   const prioritized=[...sources].sort((a,b)=>{
-    const ac=classification(a)==="CANDIDATE"?0:1;
-    const bc=classification(b)==="CANDIDATE"?0:1;
-    return ac-bc+(order.get(a.id)!-order.get(b.id)!)/10000;
+    const scoreDiff=priority(b)-priority(a);
+    if(scoreDiff!==0)return scoreDiff;
+    return (order.get(a.id)??9999)-(order.get(b.id)??9999);
   }).slice(0,Math.max(0,Math.min(MAX_PAGES,maxPages)));
 
   const outcomes=await Promise.all(prioritized.map(async source=>{
