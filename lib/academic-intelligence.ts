@@ -95,20 +95,7 @@ function studentRecordIdNearName(text:string,name:string){
   const cleaned=asciiDigits(text);
   const nameVariants=[name.trim(),name.trim().split(/\s+/).reverse().join(" ")];
   for(const variant of nameVariants){
-    const escaped=variant.replace(/[.*+?^$()|[\]\\]/g,"\\function studentRecordIdNearName(text:string,name:string){
-  const lower=norm(text);
-  const variants=[norm(name),norm(name.split(/\s+/).reverse().join(" "))];
-  let rawIndex=-1;
-  for(const variant of variants){
-    const i=lower.indexOf(variant);
-    if(i>=0){rawIndex=i;break}
-  }
-  if(rawIndex<0)return undefined;
-
-  const normalizedPrefix=lower.slice(Math.max(0,rawIndex-45),rawIndex);
-  const matches=normalizedPrefix.match(/\b\d{6,12}\b/g);
-  return matches?.at(-1);
-}").replace(/\s+/g,"\\s+");
+    const escaped=variant.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+");
     const before=new RegExp("(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})[^\\r\\n]{0,80}"+escaped,"i");
     const after=new RegExp(escaped+"[^\\r\\n]{0,80}(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})","i");
     const match=cleaned.match(before)||cleaned.match(after);
@@ -116,7 +103,6 @@ function studentRecordIdNearName(text:string,name:string){
   }
   return undefined;
 }
-
 function educationProfileEntries(text:string){
   const cleaned=asciiDigits(text).replace(/\s+/g," ");
   const marker=/(?:Education|Éducation|Formation|التعليم)\s*[:\-]?\s*/i.exec(cleaned);
