@@ -92,6 +92,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const mode=text(discoveryMeta.mode)||"unknown";
   const latestDiscoveryVersion=text(discoveryMeta.algorithmVersion);
   const needsDiscoveryRefresh=latestDiscoveryVersion!==DISCOVERY_VERSION;
+  // Keep automatic case refresh pinned to the current discovery pipeline version.
 
   const tabs=[
     ["Dossier",`/cases/${id}`],["Report",`/cases/${id}/report`],["Timeline",`/cases/${id}/timeline`],["Graph",`/cases/${id}/graph`],
