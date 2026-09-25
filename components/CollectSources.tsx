@@ -26,7 +26,8 @@ export function CollectSources({ caseId, defaultQuery }: { caseId: string; defau
       }
       const curation=body.curation;
       const curated=curation?(`${curation.kept} relevant · ${curation.review} review · ${curation.rejected} hidden noise`):"";
-      setMessage(`${mode==="quick"?"Quick":"Deep"} scan: saved ${body.count} · ${curated}`);
+      const providerNote=body.providerStatus==="degraded"?` · provider degraded (${body.failedSearchCalls}/${body.totalSearchCalls} failed)`:"";
+      setMessage(`${mode==="quick"?"Quick":"Deep"} scan: saved ${body.count} · ${curated}${providerNote}`);
       router.refresh();
     }catch(err){
       setMessage(err instanceof Error?err.message:"Collection failed");
