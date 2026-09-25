@@ -1,1 +1,1 @@
-export const DISCOVERY_VERSION="2026-09-25-contact-discovery-v6";
+export const DISCOVERY_VERSION="2026-09-25-contact-enrichment-v7";
