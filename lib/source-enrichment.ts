@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { fetchPublicPage } from "@/lib/public-page";
+import { sanitizePostgresJson, sanitizePostgresText } from "@/lib/postgres-sanitize";
 
 const MAX_PAGES=12;
 const MAX_CANDIDATES=60;
@@ -33,12 +34,12 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPa
     };
     await db.source.update({
       where:{id:source.id},
-      data:{metadata:nextMeta as any}
+      data:{metadata:sanitizePostgresJson(nextMeta) as any}
     });
     await db.evidence.create({data:{
-      caseId,sourceId:source.id,title:`Public page capture: ${source.title||page.finalUrl}`,content:page.text,
+      caseId,sourceId:source.id,title:sanitizePostgresText(`Public page capture: ${source.title||page.finalUrl}`),content:sanitizePostgresText(page.text),
       sha256:page.sha256,observedAt:new Date(page.collectedAt),
-      metadata:{kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType,fetchMode:page.fetchMode??"direct",publishedAt:page.publishedAt,modifiedAt:page.modifiedAt,imageUrl:page.imageUrl}
+      metadata:sanitizePostgresJson({kind:"PUBLIC_PAGE_CAPTURE",requestedUrl:source.url,finalUrl:page.finalUrl,status:page.status,contentType:page.contentType,fetchMode:page.fetchMode??"direct",publishedAt:page.publishedAt,modifiedAt:page.modifiedAt,imageUrl:page.imageUrl})
     }});
     return true;
   }));
