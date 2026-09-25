@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { collectPublicSources } from "@/lib/collection";
 import { fetchPublicPage } from "@/lib/public-page";
 import { db } from "@/lib/db";
+import { SerperWebConnector } from "@/lib/connectors/serper";
 
 export const dynamic="force-dynamic";
 export const maxDuration=300;
@@ -16,6 +17,14 @@ export async function GET(request:Request){
   if(url.searchParams.get("key")!==TEST_KEY)return NextResponse.json({error:"Not found"},{status:404});
 
   const mode=url.searchParams.get("mode")||"scan";
+  if(mode==="serper-health"){
+    try{
+      const rows=await new SerperWebConnector().searchPage('"nizar laassali"',1);
+      return NextResponse.json({ok:true,count:rows.length,first:rows.slice(0,3)});
+    }catch(error){
+      return NextResponse.json({ok:false,error:error instanceof Error?error.message:String(error)},{status:500});
+    }
+  }
   if(mode==="linkedin"){
     const source=await db.source.findFirst({
       where:{caseId:CASE_ID,url:{contains:"linkedin.com/in/nizar-laassali",mode:"insensitive"}},
