@@ -69,7 +69,7 @@ function institutionFrom(text:string,title:string){
     /((?:Faculté|Faculte|Faculty)[^|•]{2,120}?)(?=\s(?:Université|University|Année|Annee|Date|Semestre|Session|Filière|Filiere|Module|N°|No\b|PROCES|Résultat)|$)/i,
     140
   );
-  if(faculty)return faculty;
+  if(faculty)return faculty.replace(/\s+(?:\d{1,2}\s+){3,}\d{1,2}.*$/,"").trim();
   return capture(
     combined,
     /((?:Université|University|École|Ecole|School|Institut|Institute)[^|•]{2,110}?)(?=\s(?:Année|Annee|Date|Semestre|Session|Filière|Filiere|Module|N°|No\b|PROCES|Résultat)|$)/i,
