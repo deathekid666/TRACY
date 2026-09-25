@@ -30,24 +30,54 @@ function hasAll(haystack:string,needles:string[]){
   return needles.length>0&&needles.every(t=>set.has(t));
 }
 
-function containsIdentity(text:string,name:string){
+function identityIndex(text:string,name:string){
   const n=tokens(name);
-  if(n.length<2)return false;
-  const normalized=" "+norm(text)+" ";
-  const forward=" "+n.join(" ")+" ";
-  const reverse=" "+[...n].reverse().join(" ")+" ";
-  return normalized.includes(forward)||normalized.includes(reverse);
+  if(n.length<2)return -1;
+  const normalized=norm(text);
+  const forward=n.join(" ");
+  const reverse=[...n].reverse().join(" ");
+  let i=normalized.indexOf(forward);
+  if(i>=0)return i;
+  i=normalized.indexOf(reverse);
+  if(i>=0)return i;
+
+  const compact=normalized.replace(/\s+/g,"");
+  const compactForward=n.join("");
+  const compactReverse=[...n].reverse().join("");
+  const compactIndex=Math.max(compact.indexOf(compactForward),compact.indexOf(compactReverse));
+  if(compactIndex<0)return -1;
+
+  // PDF table extraction often glues the previous/next row to the name.
+  // Require the full first+last combination, not a single token.
+  const ratio=normalized.length/Math.max(1,compact.length);
+  return Math.floor(compactIndex*ratio);
+}
+
+function containsIdentity(text:string,name:string){
+  return identityIndex(text,name)>=0;
 }
 
 function identityExcerpt(text:string,name:string,radius=1800){
-  const normalizedName=norm(name);
   const normalizedText=norm(text);
-  let i=normalizedText.indexOf(normalizedName);
-  if(i<0)i=normalizedText.indexOf([...tokens(name)].reverse().join(" "));
+  const i=identityIndex(text,name);
   if(i<0)return text.slice(0,1800);
   const ratio=text.length/Math.max(1,normalizedText.length);
   const rawIndex=Math.floor(i*ratio);
   return text.slice(Math.max(0,rawIndex-radius),Math.min(text.length,rawIndex+radius));
+}
+
+function directProfileSurface(url:string){
+  try{
+    const u=new URL(url);
+    const host=u.hostname.replace(/^www\./,"").toLowerCase();
+    const p=u.pathname.split("/").filter(Boolean).map(x=>x.toLowerCase());
+    if(host.includes("facebook.com"))return p[0]!=="groups"&&p[0]!=="posts"&&p[0]!=="watch";
+    if(host.includes("linkedin.com"))return p[0]==="in"||p[0]==="pub";
+    if(host.includes("instagram.com"))return Boolean(p[0])&&!["p","reel","reels","explore","stories"].includes(p[0]);
+    if(host.includes("reddit.com"))return p[0]==="user";
+    if(host.includes("tiktok.com")||host.includes("threads.net")||host==="x.com"||host.includes("twitter.com")||host.includes("pinterest.com")||host.includes("github.com")||host.includes("twitch.tv"))return Boolean(p[0]);
+    return true;
+  }catch{return true}
 }
 
 const RESERVED_HANDLES=new Set(["public","profile","profiles","people","user","users","help","support","groups","pages","reel","reels","explore","community","communities"]);
@@ -161,7 +191,9 @@ export async function curateSources(caseId:string,useAi=true){
     const snippet=bodyIdentity?identityExcerpt(fullEvidence,personName):fullEvidence.slice(0,1800);
     const combined=[source.title||"",source.url,snippet].join(" ");
     const titleAndSnippet=[source.title||"",snippet].join(" ");
-    const rootMatch=bodyIdentity||hasAll(titleAndSnippet,nameTokens)||hasAll(source.url,nameTokens);
+    const titleIdentity=hasAll(source.title||"",nameTokens);
+    const urlIdentity=hasAll(source.url,nameTokens);
+    const rootMatch=bodyIdentity||titleIdentity||urlIdentity||hasAll(titleAndSnippet,nameTokens);
     const handleMatch=usernames.some(u=>u.length>=3&&norm(combined).includes(u));
     const identityScore=typeof m.identityScore==="number"?m.identityScore:0;
     let score=identityScore;
@@ -177,11 +209,13 @@ export async function curateSources(caseId:string,useAi=true){
     const academicPlausibility=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;
     const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
     const bodyVerifiedAcademic=bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
+    const indirectAccountHit=category==="PUBLIC_ACCOUNT"&&!directProfileSurface(source.url)&&!titleIdentity&&!urlIdentity&&!handleMatch;
+    if(indirectAccountHit){score-=60;reasons.push("indirect social/group page, not a direct identity profile")}
     const decision:CuratedDecision=bodyVerifiedAcademic
       ?"KEEP"
       :(isAcademicCandidate
         ?(academicPlausibility>=25?"REVIEW":"REJECT")
-        :(score>=75?"KEEP":score>=45?"REVIEW":"REJECT"));
+        :(indirectAccountHit?"REJECT":(score>=75?"KEEP":score>=45?"REVIEW":"REJECT")));
     if(isAcademicCandidate){
       reasons.push(academicPlausibility>=25
         ?"academic/document lead retained for analyst review"
