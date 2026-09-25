@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { fetchPublicPage } from "@/lib/public-page";
 import { sanitizePostgresJson, sanitizePostgresText } from "@/lib/postgres-sanitize";
+import { DISCOVERY_VERSION } from "@/lib/discovery-version";
 
 const MAX_PAGES=12;
 const MAX_CANDIDATES=60;
@@ -43,7 +44,8 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPa
       modifiedAt:page.modifiedAt??(typeof currentMeta.modifiedAt==="string"?currentMeta.modifiedAt:undefined),
       imageUrl:page.imageUrl??(typeof currentMeta.imageUrl==="string"?currentMeta.imageUrl:undefined),
       finalUrl:page.finalUrl,
-      fetchMode:page.fetchMode??"direct"
+      fetchMode:page.fetchMode??"direct",
+      enrichmentVersion:DISCOVERY_VERSION
     };
     await db.source.update({
       where:{id:source.id},
