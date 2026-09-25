@@ -129,6 +129,7 @@ type Ranked=CollectedResult&{score:number;reasons:string[];classification:string
 
 function pagesForQuery(query:string,index:number){
   if(index<2)return [1,2,3];
+  if(/email|gmail|contact/i.test(query))return [1,2];
   if(/\bsite:|\bfiletype:/i.test(query))return [1,2];
   return [1];
 }
