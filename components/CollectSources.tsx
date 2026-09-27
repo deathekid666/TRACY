@@ -1,45 +1,34 @@
 "use client";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { getScanController } from "@/lib/scan-controller";
 
-export function CollectSources({ caseId, defaultQuery }: { caseId: string; defaultQuery: string }) {
-  const router = useRouter();
+export function CollectSources({ caseId, defaultQuery, autoEnabled=false, version="" }: {
+  caseId: string; defaultQuery: string; autoEnabled?: boolean; version?: string;
+}) {
+  const router=useRouter();
   const [query,setQuery]=useState(defaultQuery);
-  const [busy,setBusy]=useState<"quick"|"deep"|null>(null);
-  const [message,setMessage]=useState("");
+  const controller=useMemo(()=>getScanController(caseId),[caseId]);
+  const {busy,message,error,revision}=useSyncExternalStore(controller.subscribe,controller.getSnapshot,controller.getSnapshot);
+  const lastRefresh=useRef(0);
 
-  async function run(mode:"quick"|"deep",e?:FormEvent){
+  useEffect(()=>{
+    controller.startAutomatic(defaultQuery,autoEnabled,version);
+  },[controller,defaultQuery,autoEnabled,version]);
+
+  useEffect(()=>{
+    if(revision>lastRefresh.current){lastRefresh.current=revision;router.refresh()}
+  },[revision,router]);
+
+  function run(mode:"quick"|"deep",e?:FormEvent){
     e?.preventDefault();
-    if(!query.trim()||busy)return;
-    setBusy(mode);
-    setMessage(mode==="quick"?"Running quick scan…":"Running deep scan. You can keep this case open while it works…");
-    try{
-      const res=await fetch(`/api/cases/${caseId}/collect`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({query,mode})
-      });
-      const body=await res.json();
-      if(!res.ok){
-        setMessage(body.detail||body.error||"Collection failed");
-        return;
-      }
-      const curation=body.curation;
-      const curated=curation?(`${curation.kept} relevant · ${curation.review} review · ${curation.rejected} hidden noise`):"";
-      const providerNote=body.providerStatus==="degraded"?` · provider degraded (${body.failedSearchCalls}/${body.totalSearchCalls} failed)`:"";
-      setMessage(`${mode==="quick"?"Quick":"Deep"} scan: saved ${body.count} · ${curated}${providerNote}`);
-      router.refresh();
-    }catch(err){
-      setMessage(err instanceof Error?err.message:"Collection failed");
-    }finally{
-      setBusy(null);
-    }
+    void controller.run(query,mode);
   }
 
   return <div>
     <form onSubmit={e=>run("quick",e)} className="flex flex-col gap-3">
       <div className="flex flex-col gap-3 lg:flex-row">
-        <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Name, username, email, domain…"
+        <input aria-label="Search identity" disabled={Boolean(busy)} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Name, username, email, domain…"
           className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 outline-none focus:border-cyan-300/50"/>
         <button disabled={Boolean(busy)||!query.trim()}
           className="rounded-xl bg-cyan-300 px-5 py-3 font-medium text-slate-950 disabled:opacity-50">
@@ -54,7 +43,7 @@ export function CollectSources({ caseId, defaultQuery }: { caseId: string; defau
         <span><b className="text-slate-300">Quick</b> — core identity, major profiles, first documents.</span>
         <span><b className="text-slate-300">Deep</b> — archives, documents, handle pivots, forums and independent indexes.</span>
       </div>
-      {message&&<div className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">{message}</div>}
+      {message&&<div role={error?"alert":"status"} aria-live="polite" className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">{message}</div>}
     </form>
   </div>;
 }

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { RESERVED_HANDLES as RESERVED_PIVOT_HANDLES, validPublicHandle as validPivotHandle, usernameFromProfileUrl as usernameFromUrl } from "@/lib/public-handles";
 import { SerperWebConnector } from "@/lib/connectors/serper";
 import type { CollectedResult } from "@/lib/connectors/types";
 import { extractEvidenceEntities } from "@/lib/evidence-extraction";
@@ -25,19 +26,6 @@ const MAX_SERPER_CALLS=30;
 const MAX_DEEP_DOCUMENT_CHECKS=24;
 const MAX_PLATFORM_CALLS=30;
 
-const RESERVED_PIVOT_HANDLES=new Set([
-  "public","profile","profiles","people","user","users","help","support","groups","pages",
-  "reel","reels","explore","community","communities","business","search","topics","settings",
-  "watch","events","marketplace","about","login","signin","signup","register"
-]);
-
-function validPivotHandle(value:string){
-  const v=value.toLowerCase().replace(/^@/,"").trim();
-  const looksLikeDomain=/\.(?:com|net|org|io|co|ma|fr|uk|me|tv|dev|app)$/i.test(v);
-  const hasLetter=/[a-z]/.test(v);
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&hasLetter&&!looksLikeDomain&&!RESERVED_PIVOT_HANDLES.has(v);
-}
-
 function reservedPlatformArtifact(metadata:unknown){
   const m=(metadata??{}) as Record<string,unknown>;
   const q=typeof m.discoveryQuery==="string"?m.discoveryQuery:"";
@@ -52,16 +40,6 @@ const SERPER_BATCH_DELAY_MS=1100;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
 function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
-function usernameFromUrl(url:string){
-  try{
-    const u=new URL(url),host=u.hostname.replace(/^www\./,""),p=u.pathname.split("/").filter(Boolean);
-    if(/reddit\.com$/.test(host)&&p[0]==="user")return p[1]||"";
-    if(/snapchat\.com$/.test(host)&&p[0]==="add")return p[1]||"";
-    if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))return (p[0]||"").replace(/^@/,"");
-    if(/pinterest\.|facebook\.|instagram\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))return p[0]||"";
-  }catch{}
-  return "";
-}
 function allTokensPresent(haystack:string,needles:string[]){const hs=new Set(norm(haystack).split(/\s+/).filter(Boolean));return needles.length>0&&needles.every(t=>hs.has(t))}
 function reversedQuery(query:string){return query.trim().split(/\s+/).reverse().join(" ")}
 function identityInText(text:string,query:string){
@@ -565,6 +543,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const serperCalls=firstRun.calls+academicRun.calls+contactRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
   const failedSerperCalls=(firstRun.failedCalls??0)+(academicRun.failedCalls??0)+(contactRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
   const curation=await curateSources(caseId,mode==="deep");
+  const finalExtraction=await extractEvidenceEntities(caseId);
   const academicIntelligence=plan.kind==="PERSON"?await extractAcademicIntelligence(caseId,query):{records:[]};
   const providerStatus=serperCalls>0&&failedSerperCalls>=serperCalls
     ?"unavailable"
@@ -580,7 +559,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     caseId,title:eventTitle,
     description,
     occurredAt:new Date(),
-    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,providerStatus,searchProvider:"Google / Serper",initialQueries,academicQueries,contactQueries,contactPlan:{usernames:contactPlan.usernames,sourceHosts:contactPlan.sourceHosts,sourceIds:contactPlan.sourceIds},pivotQueries,usernameSeeds,newUsernameSeeds,contactCalls:contactRun.calls,contactFailedCalls:contactRun.failedCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,removedReservedPivotArtifacts:badPivotIds.length,firstEnrichment,contactEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,contactExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
+    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,providerStatus,searchProvider:"Google / Serper",initialQueries,academicQueries,contactQueries,contactPlan:{usernames:contactPlan.usernames,sourceHosts:contactPlan.sourceHosts,sourceIds:contactPlan.sourceIds},pivotQueries,usernameSeeds,newUsernameSeeds,contactCalls:contactRun.calls,contactFailedCalls:contactRun.failedCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,removedReservedPivotArtifacts:badPivotIds.length,firstEnrichment,contactEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,contactExtraction,platformExtraction1,platformExtraction2,secondExtraction,finalExtraction,curation,academicIntelligence}
   }});
 
   return {mode,providerStatus,searchProvider:"Google / Serper",results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...contactQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicCandidatesRetained:academic.retainedCandidates,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,contact:contactEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,contact:contactExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};

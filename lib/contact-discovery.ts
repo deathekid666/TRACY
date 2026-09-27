@@ -1,10 +1,5 @@
 import { db } from "@/lib/db";
-
-const RESERVED_HANDLES=new Set([
-  "public","profile","profiles","people","user","users","help","support","groups","pages",
-  "reel","reels","explore","community","communities","business","search","topics","settings",
-  "watch","events","marketplace","about","login","signin","signup","register"
-]);
+import { validPublicHandle as validHandle, publicDiscoverySurface } from "@/lib/public-handles";
 
 const CONTACT_SURFACES=[
   "linkedin.com","github.com","gitlab.com","about.me","linktr.ee","medium.com",
@@ -13,12 +8,6 @@ const CONTACT_SURFACES=[
 
 function unique(values:string[]){
   return [...new Set(values.map(v=>v.replace(/\s+/g," ").trim()).filter(Boolean))];
-}
-
-function validHandle(value:string){
-  const v=value.toLowerCase().replace(/^@/,"").trim();
-  const looksLikeDomain=/\.(?:com|net|org|io|co|ma|fr|uk|me|tv|dev|app)$/i.test(v);
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&/[a-z]/.test(v)&&!looksLikeDomain&&!RESERVED_HANDLES.has(v);
 }
 
 function hostOf(url:string){
@@ -61,7 +50,7 @@ export async function buildContactEnrichmentPlan(caseId:string,personName:string
     const m=(source.metadata??{}) as Record<string,unknown>;
     const classification=String(m.classification??"");
     const curated=String(m.curatedDecision??"");
-    if(curated==="REJECT")return false;
+    if(curated==="REJECT"||publicDiscoverySurface(source.url))return false;
     if(classification!=="STRONG"&&classification!=="POSSIBLE")return false;
 
     const category=String(m.curatedCategory??m.category??"");
@@ -74,32 +63,26 @@ export async function buildContactEnrichmentPlan(caseId:string,personName:string
   const sourceHosts=unique(supported.map(s=>hostOf(s.url)).filter(Boolean)).slice(0,8);
 
   const name=personName.replace(/"/g," ").replace(/\s+/g," ").trim();
-  const queries:string[]=[];
-
-  // Confirmed public surfaces first: these are the highest-value, lowest-noise pivots.
-  for(const host of sourceHosts){
-    queries.push(`site:${host} "${name}" email`);
-    queries.push(`site:${host} "${name}" contact`);
-  }
-
-  for(const username of usernames){
-    queries.push(`"${name}" "${username}" email`);
-    queries.push(`"${name}" "${username}" gmail`);
-    queries.push(`"${name}" "@${username}" contact`);
-  }
-
-  // Name-only fallbacks remain behind confirmed pivots and still pass through
-  // collection.ts's full-name identity gate before any evidence is persisted.
-  queries.push(
-    `site:linkedin.com/in "${name}" email`,
-    `site:linkedin.com/in "${name}" gmail`,
+  // Reserve room for every strategy. A long list of sites or handles used to
+  // consume the whole budget before any broad contact query could run.
+  const siteQueries=["email","contact"].flatMap(intent=>
+    sourceHosts.map(host=>`site:${host} "${name}" ${intent}`));
+  const handleQueries=["email","gmail","contact"].flatMap(intent=>
+    usernames.map(username=>`"${name}" "${intent==="contact"?"@":""}${username}" ${intent}`));
+  const nameQueries=[
     `"${name}" email contact`,
     `"${name}" gmail`,
     `"${name}" "@gmail.com"`,
     `filetype:pdf "${name}" email`,
-    `"${name}" phone contact`,
-    `"${name}" telephone contact`
-  );
+    `site:linkedin.com/in "${name}" email`,
+    `"${name}" phone contact`
+  ];
+  const queries:string[]=[];
+  for(let i=0;i<Math.max(siteQueries.length,handleQueries.length,nameQueries.length);i++){
+    for(const group of [siteQueries,handleQueries,nameQueries]){
+      if(group[i])queries.push(group[i]);
+    }
+  }
 
   return {
     queries:unique(queries).slice(0,Math.max(0,maxQueries)),

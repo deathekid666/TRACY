@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
+import { publicDiscoverySurface, usernameFromProfileUrl, validPublicHandle } from "@/lib/public-handles";
 
-const EMAIL=/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const USERNAME=/@[a-zA-Z0-9._-]{3,32}\b/g;
+const EMAIL=/(?<![A-Z0-9._%+*•…-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![A-Z0-9_%+*•…-])/gi;
+const USERNAME=/(?<![\w.*%+•…-])@[a-zA-Z0-9._-]{3,32}\b/g;
 const PHONE=/(?:\+?\d[\d\s().-]{7,}\d)/g;
 
 function norm(value:string){
@@ -24,16 +25,8 @@ function nearIdentity(text:string,value:string,query:string,radius=180){
   const qt=tokens(query);
   return qt.length>0&&qt.every(t=>wt.has(t));
 }
-const RESERVED_USERNAMES=new Set([
-  "public","publications","public-profile","profile","profiles","people","user","users","member","members",
-  "help","support","privacy","legal","login","signin","signup","register","groups","group","pages","page",
-  "reel","reels","stories","story","explore","directory","about","business","marketplace","watch","events",
-  "settings","search","topics","topic","communities","community"
-]);
-
 function validUsername(value:string){
-  const v=value.toLowerCase().replace(/^@/,"").trim();
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&!RESERVED_USERNAMES.has(v);
+  return validPublicHandle(value);
 }
 
 function canonicalPhone(raw:string){
@@ -68,6 +61,7 @@ export async function extractEvidenceEntities(caseId:string){
     const sm=(item.source.metadata??{}) as Record<string,unknown>;
     const cls=String(sm.classification??"");
     if(cls!=="STRONG"&&cls!=="POSSIBLE")continue;
+    if(sm.curatedDecision==="REJECT"||publicDiscoverySurface(item.source.url))continue;
 
     const query=queryFrom(item.metadata)||queryFrom(item.source.metadata);
     const kind=kindFrom(item.metadata);
@@ -75,7 +69,9 @@ export async function extractEvidenceEntities(caseId:string){
     const sourceTitleTokens=new Set(tokens(sourceTitle));
     const queryTokens=tokens(query);
     const sourceTitleMatchesIdentity=queryTokens.length>0&&queryTokens.every(t=>sourceTitleTokens.has(t));
-    const text=[item.title,item.content].filter(Boolean).join(" ");
+    // Capture titles are generated from search titles. They must not supply
+    // identity context for an unrelated contact found in a long page body.
+    const text=kind==="PUBLIC_PAGE_CAPTURE"?(item.content||""):[item.title,item.content].filter(Boolean).join(" ");
     const found:Array<{type:"EMAIL"|"USERNAME"|"PHONE";raw:string;canonical:string}>=[];
 
     for(const raw of [...new Set(text.match(EMAIL)??[])].slice(0,10)){
@@ -97,36 +93,10 @@ export async function extractEvidenceEntities(caseId:string){
       }
     }
 
-    try{
-      const u=new URL(item.source.url);
-      const host=u.hostname.replace(/^www\./,"");
-      const p=u.pathname.split("/").filter(Boolean);
-      let user="";
-
-      if(/reddit\.com$/.test(host)&&p[0]==="user")user=p[1]||"";
-      else if(/snapchat\.com$/.test(host)&&p[0]==="add")user=p[1]||"";
-      else if(/tiktok\.com$|threads\.net$/.test(host))user=(p[0]||"").replace(/^@/,"");
-      else if(/youtube\.com$/.test(host)&&((p[0]||"").startsWith("@")))user=(p[0]||"").replace(/^@/,"");
-      else if(/facebook\./.test(host)){
-        if(p[0]==="public")user="";
-        else if(!["groups","pages","help","watch","events","marketplace","profile.php"].includes((p[0]||"").toLowerCase()))user=p[0]||"";
-      }
-      else if(/instagram\./.test(host)){
-        if(!["reel","reels","p","explore","stories","accounts","about","help"].includes((p[0]||"").toLowerCase()))user=p[0]||"";
-      }
-      else if(/pinterest\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))user=p[0]||"";
-      else if(/\.tumblr\.com$/.test(host)){
-        const sub=host.split(".")[0];
-        if(sub&&sub!=="www")user=sub;
-      }
-
-      if(user&&validUsername(user)){
-        const handleIsContextual=sourceTitleMatchesIdentity||nearIdentity(text,user,query,320);
-        if(handleIsContextual){
-          found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
-        }
-      }
-    }catch{}
+    const user=usernameFromProfileUrl(item.source.url);
+    if(user&&(sourceTitleMatchesIdentity||nearIdentity(text,user,query,320))){
+      found.push({type:"USERNAME",raw:"@"+user,canonical:user.toLowerCase()});
+    }
 
     for(const raw of [...new Set(text.match(USERNAME)??[])].slice(0,10)){
       if(validUsername(raw)&&nearIdentity(text,raw,query))found.push({type:"USERNAME",raw,canonical:raw.slice(1).toLowerCase()});
