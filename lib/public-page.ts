@@ -121,8 +121,14 @@ export type PageSnapshot={
   publishedAt?:string;
   modifiedAt?:string;
   imageUrl?:string;
-  fetchMode?:"direct"|"reader-fallback";
+  fetchMode?:"direct"|"reader-fallback"|"serper-page";
 };
+
+export function unavailablePublicPage(text:string,url:string){
+  const beginning=text.trim().slice(0,260);
+  return /\/authwall(?:[/?#]|$)|\/checkpoint\//i.test(url)
+    || /^(?:Title:\s*)?(?:(?:Sign Up|Sign In|Log In|Login|Join)\s*[|–-]\s*LinkedIn|Just a moment|Access denied|Robot check|Verify (?:that )?you are human)/i.test(beginning);
+}
 
 async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
   if(!isPublicHttpUrl(url))return null;
@@ -143,7 +149,7 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
     if(!bytes||!bytes.length)return null;
     const raw=bytes.toString("utf8");
     const text=sanitizePostgresText(raw.replace(/\s+/g," ").trim().slice(0,240_000));
-    if(!text)return null;
+    if(!text||unavailablePublicPage(text,url))return null;
 
     const imageMatch=raw.match(/(?:^|\n)Image:\s*(https?:\/\/\S+)/i);
     const publishedMatch=raw.match(/(?:^|\n)(?:Published Time|Published|Date):\s*([^\n]+)/i);
@@ -167,7 +173,7 @@ async function fetchReaderFallback(url:string):Promise<PageSnapshot|null>{
   }
 }
 
-export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
+async function fetchDirectOrReaderPage(url:string):Promise<PageSnapshot|null>{
   if(!isPublicHttpUrl(url))return null;
 
   try{
@@ -216,7 +222,7 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
       imageUrl=metadata.imageUrl;
     }
 
-    if(!text)return fetchReaderFallback(url);
+    if(!text||unavailablePublicPage(text,finalUrl))return fetchReaderFallback(url);
 
     return {
       url,
@@ -236,4 +242,41 @@ export async function fetchPublicPage(url:string):Promise<PageSnapshot|null>{
   }finally{
     clearTimeout(timer);
   }
+}
+
+// The existing search provider also exposes public webpage extraction. Use it
+// only for the bounded, identity-seeded contact pass when direct/reader content
+// is unavailable. Its returned text, never a model summary, becomes evidence.
+async function fetchProviderPage(url:string):Promise<PageSnapshot|null>{
+  const apiKey=process.env.SERPER_API_KEY;
+  if(!apiKey||!isPublicHttpUrl(url))return null;
+  try{
+    const response=await fetch("https://scrape.serper.dev",{
+      method:"POST",
+      headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
+      body:JSON.stringify({url}),
+      signal:AbortSignal.timeout(15_000),
+      cache:"no-store"
+    });
+    if(!response.ok)return null;
+    const bytes=await readLimited(response,MAX_READER_BYTES);
+    if(!bytes)return null;
+    const data=JSON.parse(bytes.toString("utf8"));
+    if(typeof data.text!=="string")return null;
+    const text=sanitizePostgresText(data.text.replace(/\s+/g," ").trim().slice(0,240_000));
+    const title=typeof data.metadata?.title==="string"?data.metadata.title:"";
+    const finalUrl=typeof data.metadata?.url==="string"?data.metadata.url:url;
+    if(!text||!isPublicHttpUrl(finalUrl)||unavailablePublicPage(title,finalUrl)||unavailablePublicPage(text,finalUrl))return null;
+    return {
+      url,finalUrl,status:response.status,contentType:"text/plain; source=serper-page",
+      text,sha256:createHash("sha256").update(text).digest("hex"),
+      collectedAt:new Date().toISOString(),fetchMode:"serper-page"
+    };
+  }catch{return null}
+}
+
+export async function fetchPublicPage(url:string,options:{providerFallback?:boolean}={}):Promise<PageSnapshot|null>{
+  const page=await fetchDirectOrReaderPage(url);
+  if(page)return page;
+  return options.providerFallback?fetchProviderPage(url):null;
 }

@@ -471,7 +471,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const contact=await preserve(caseId,query,contactRun.results,false);
   const contactEnrichmentIds=[...new Set([...contactPlan.sourceIds,...contact.sourceIds])];
   const contactEnrichment=contactEnrichmentIds.length
-    ?await enrichPublicSources(caseId,contactEnrichmentIds,mode==="quick"?6:12)
+    ?await enrichPublicSources(caseId,contactEnrichmentIds,mode==="quick"?6:12,true)
     :{attempted:0,fetched:0,failed:0};
   const contactExtraction=contactEnrichmentIds.length||contact.sourceIds.length
     ?await extractEvidenceEntities(caseId)
