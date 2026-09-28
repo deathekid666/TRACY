@@ -90,7 +90,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
     return image?[image,{image,source:s}]:null;
   }).filter(Boolean) as Array<[string,{image:string;source:(typeof photoSources)[number]}]>).values()).slice(0,6);
 
-  const latestDiscovery=investigation.events.find(e=>e.title==="Deep public-footprint discovery");
+  const latestDiscovery=investigation.events.find(e=>e.title==="Deep public-footprint discovery"||e.title==="Quick public-footprint discovery");
   const discoveryMeta=meta(latestDiscovery?.metadata);
   const mode=text(discoveryMeta.mode)||"unknown";
   const latestDiscoveryVersion=text(discoveryMeta.algorithmVersion);
