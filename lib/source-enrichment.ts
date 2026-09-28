@@ -11,7 +11,7 @@ function classification(source:{metadata:unknown}){
   return String(metadata.classification??"");
 }
 
-export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPages=MAX_PAGES){
+export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPages=MAX_PAGES,providerFallback=false){
   const candidateIds=sourceIds.slice(0,MAX_CANDIDATES);
   const sources=await db.source.findMany({where:{caseId,id:{in:candidateIds}}});
   const order=new Map(sourceIds.map((id,index)=>[id,index]));
@@ -35,7 +35,7 @@ export async function enrichPublicSources(caseId:string,sourceIds:string[],maxPa
   }).slice(0,Math.max(0,Math.min(MAX_PAGES,maxPages)));
 
   const outcomes=await Promise.all(prioritized.map(async source=>{
-    const page=await fetchPublicPage(source.url);
+    const page=await fetchPublicPage(source.url,{providerFallback});
     if(!page)return false;
     const currentMeta=(source.metadata??{}) as Record<string,unknown>;
     const nextMeta={

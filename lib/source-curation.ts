@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { directProfileSurface, publicDiscoverySurface, validPublicHandle } from "@/lib/public-handles";
 
 type CuratedDecision="KEEP"|"REVIEW"|"REJECT";
 
@@ -65,28 +66,6 @@ function identityExcerpt(text:string,name:string,radius=1800){
   const rawIndex=Math.floor(i*ratio);
   return text.slice(Math.max(0,rawIndex-radius),Math.min(text.length,rawIndex+radius));
 }
-
-function directProfileSurface(url:string){
-  try{
-    const u=new URL(url);
-    const host=u.hostname.replace(/^www\./,"").toLowerCase();
-    const p=u.pathname.split("/").filter(Boolean).map(x=>x.toLowerCase());
-    if(host.includes("facebook.com")){
-      const root=p[0]||"";
-      const directoryRoots=new Set(["public","people","search","groups","posts","watch","pages","events","marketplace","help"]);
-      if(directoryRoots.has(root))return false;
-      if(root==="profile.php")return Boolean(u.searchParams.get("id"));
-      return Boolean(root);
-    }
-    if(host.includes("linkedin.com"))return p[0]==="in"||p[0]==="pub";
-    if(host.includes("instagram.com"))return Boolean(p[0])&&!["p","reel","reels","explore","stories"].includes(p[0]);
-    if(host.includes("reddit.com"))return p[0]==="user";
-    if(host.includes("tiktok.com")||host.includes("threads.net")||host==="x.com"||host.includes("twitter.com")||host.includes("pinterest.com")||host.includes("github.com")||host.includes("twitch.tv"))return Boolean(p[0]);
-    return true;
-  }catch{return true}
-}
-
-const RESERVED_HANDLES=new Set(["public","profile","profiles","people","user","users","help","support","groups","pages","reel","reels","explore","community","communities"]);
 
 function genericNoise(text:string,url:string){
   const s=(text+" "+url).toLowerCase();
@@ -185,9 +164,9 @@ export async function curateSources(caseId:string,useAi=true){
   const usernames=investigation.entities
     .filter(e=>e.type==="USERNAME")
     .map(e=>norm(e.canonical||e.label).replace(/^@/,""))
-    .filter(u=>Boolean(u)&&!RESERVED_HANDLES.has(u));
+    .filter(validPublicHandle);
 
-  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string;bodyIdentity:boolean;forcedReject:boolean}>();
+  const preliminary=new Map<string,{decision:CuratedDecision;reason:string;score:number;category:string;snippet:string;bodyIdentity:boolean;forcedReject:boolean;handleOnly:boolean}>();
   const aiCandidates:Array<{id:string;url:string;title:string;snippet:string;deterministic:string}>=[];
 
   for(const source of investigation.sources){
@@ -215,7 +194,9 @@ export async function curateSources(caseId:string,useAi=true){
     const academicPlausibility=typeof m.academicCandidatePlausibility==="number"?m.academicCandidatePlausibility:0;
     const isAcademicCandidate=sourceClassification==="CANDIDATE"&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
     const bodyVerifiedAcademic=bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(category);
-    const nonProfileAccountSurface=category==="PUBLIC_ACCOUNT"&&!directProfileSurface(source.url);
+    const nonProfileAccountSurface=publicDiscoverySurface(source.url)||(category==="PUBLIC_ACCOUNT"&&!directProfileSurface(source.url));
+    const handleOnly=handleMatch&&!rootMatch;
+    if(handleOnly){score=Math.min(score,65);reasons.push("handle reuse alone does not establish the searched identity")}
     if(nonProfileAccountSurface){score-=90;reasons.push("directory/group/search surface, not an individual public profile")}
     const decision:CuratedDecision=bodyVerifiedAcademic
       ?"KEEP"
@@ -227,7 +208,7 @@ export async function curateSources(caseId:string,useAi=true){
         ?"academic/document lead retained for analyst review"
         :"low-plausibility academic search result kept only in raw sources");
     }
-    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet,bodyIdentity,forcedReject:nonProfileAccountSurface});
+    preliminary.set(source.id,{decision,reason:reasons.join("; ")||"deterministic source review",score:Math.max(score,academicPlausibility),category,snippet,bodyIdentity,forcedReject:nonProfileAccountSurface,handleOnly});
 
     if(decision!=="REJECT"&&aiCandidates.length<36){
       aiCandidates.push({
@@ -273,7 +254,7 @@ export async function curateSources(caseId:string,useAi=true){
     const aiDecision=aiById.get(source.id);
     const duplicateTarget=duplicateOf.get(source.id);
     const bodyVerifiedAcademic=pre.bodyIdentity&&["ACADEMIC","EDUCATION","DOCUMENT"].includes(pre.category);
-    const decision:CuratedDecision=duplicateTarget||pre.forcedReject?"REJECT":(bodyVerifiedAcademic?"KEEP":(aiDecision?.decision??pre.decision));
+    const decision:CuratedDecision=duplicateTarget||pre.forcedReject?"REJECT":(bodyVerifiedAcademic?"KEEP":(pre.handleOnly?(aiDecision?.decision==="REJECT"?"REJECT":"REVIEW"):(aiDecision?.decision??pre.decision)));
     finalDecisionById.set(source.id,decision);
     if(decision==="KEEP")kept++;
     else if(decision==="REVIEW")review++;
@@ -285,8 +266,8 @@ export async function curateSources(caseId:string,useAi=true){
       data:{metadata:{
         ...current,
         curatedDecision:decision,
-        curatedReason:duplicateTarget?("Duplicate of source "+duplicateTarget):(bodyVerifiedAcademic?"Exact searched identity found inside captured academic/document evidence":(aiDecision?.summary||pre.reason)),
-        curatedConfidence:aiDecision?.confidence??Math.max(0,Math.min(100,pre.score)),
+        curatedReason:duplicateTarget?("Duplicate of source "+duplicateTarget):(bodyVerifiedAcademic?"Exact searched identity found inside captured academic/document evidence":(pre.forcedReject||pre.handleOnly?pre.reason:(aiDecision?.summary||pre.reason))),
+        curatedConfidence:pre.handleOnly?Math.min(65,pre.score):(aiDecision?.confidence??Math.max(0,Math.min(100,pre.score))),
         curatedCategory:aiDecision?.category||pre.category,
         aiCurated:Boolean(aiDecision),
         curatedDuplicateOf:duplicateTarget||undefined

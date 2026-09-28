@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { validPublicHandle } from "@/lib/public-handles";
 
 const SAFE_TYPES=new Set(["EMAIL","USERNAME"]);
 
@@ -17,6 +18,7 @@ export async function getPublicPivots(caseId:string,original:string,limit=8){
 
     if(e.type==="USERNAME"){
       const u=value.replace(/^@/,"");
+      if(!validPublicHandle(u))continue;
       out.push('"'+u+'"');
       out.push('"'+u+'" profile account member');
       out.push('"'+u+'" forum author contributor');

@@ -104,13 +104,16 @@ function identityContext(text:string,name:string,radius=2200){
   return text.slice(Math.max(0,rawIndex-radius),Math.min(text.length,rawIndex+radius));
 }
 
-function studentRecordIdNearName(text:string,name:string){
-  const cleaned=asciiDigits(text);
+// A nearby number or URL slug cannot establish a person's student ID.
+export function studentRecordIdNearName(text:string,name:string){
+  const cleaned=asciiDigits(text).replace(/https?:\/\/[^\s<>]+/gi," ");
   const nameVariants=[name.trim(),name.trim().split(/\s+/).reverse().join(" ")];
+  const label="(?:student\\s*(?:id|number)|(?:n°|no|nº|numéro|numero|code)\\s*(?:étudiant|etudiant)|apogée|apogee)";
+  const separator="[ \\t:|,;=-]*";
   for(const variant of nameVariants){
-    const escaped=variant.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+");
-    const before=new RegExp("(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})[^\\r\\n]{0,80}"+escaped,"i");
-    const after=new RegExp(escaped+"[^\\r\\n]{0,80}(?:N°|No|Nº)?\\s*(?:étudiant|etudiant|student)?\\s*[:#-]?\\s*(\\d{6,12})","i");
+    const escaped=variant.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"[ \\t]+");
+    const before=new RegExp(label+separator+"(\\d{6,12})\\b"+separator+escaped+"\\b","i");
+    const after=new RegExp("\\b"+escaped+separator+label+separator+"(\\d{6,12})\\b","i");
     const match=cleaned.match(before)||cleaned.match(after);
     if(match?.[1])return match[1];
   }
@@ -151,6 +154,7 @@ export async function extractAcademicIntelligence(caseId:string,personName:strin
 
   for(const source of sources){
     const sm=meta(source.metadata);
+    if(sm.curatedDecision==="REJECT")continue;
     const category=String(sm.curatedCategory??sm.category??"GENERAL");
     const sourceText=[source.title??"",...source.evidence.map(e=>e.content??"")].join(" ");
     const academicSignal=

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { RESERVED_HANDLES as RESERVED_PIVOT_HANDLES, validPublicHandle as validPivotHandle, usernameFromProfileUrl as usernameFromUrl } from "@/lib/public-handles";
 import { SerperWebConnector } from "@/lib/connectors/serper";
 import type { CollectedResult } from "@/lib/connectors/types";
 import { extractEvidenceEntities } from "@/lib/evidence-extraction";
@@ -25,19 +26,6 @@ const MAX_SERPER_CALLS=30;
 const MAX_DEEP_DOCUMENT_CHECKS=24;
 const MAX_PLATFORM_CALLS=30;
 
-const RESERVED_PIVOT_HANDLES=new Set([
-  "public","profile","profiles","people","user","users","help","support","groups","pages",
-  "reel","reels","explore","community","communities","business","search","topics","settings",
-  "watch","events","marketplace","about","login","signin","signup","register"
-]);
-
-function validPivotHandle(value:string){
-  const v=value.toLowerCase().replace(/^@/,"").trim();
-  const looksLikeDomain=/\.(?:com|net|org|io|co|ma|fr|uk|me|tv|dev|app)$/i.test(v);
-  const hasLetter=/[a-z]/.test(v);
-  return /^[a-z0-9._-]{3,32}$/.test(v)&&hasLetter&&!looksLikeDomain&&!RESERVED_PIVOT_HANDLES.has(v);
-}
-
 function reservedPlatformArtifact(metadata:unknown){
   const m=(metadata??{}) as Record<string,unknown>;
   const q=typeof m.discoveryQuery==="string"?m.discoveryQuery:"";
@@ -52,16 +40,6 @@ const SERPER_BATCH_DELAY_MS=1100;
 
 function norm(value:string){return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
 function tokens(value:string){return norm(value).split(/\s+/).filter(Boolean)}
-function usernameFromUrl(url:string){
-  try{
-    const u=new URL(url),host=u.hostname.replace(/^www\./,""),p=u.pathname.split("/").filter(Boolean);
-    if(/reddit\.com$/.test(host)&&p[0]==="user")return p[1]||"";
-    if(/snapchat\.com$/.test(host)&&p[0]==="add")return p[1]||"";
-    if(/tiktok\.com$|threads\.net$|youtube\.com$/.test(host))return (p[0]||"").replace(/^@/,"");
-    if(/pinterest\.|facebook\.|instagram\.|github\.|x\.com$|twitter\.|twitch\.tv$/.test(host))return p[0]||"";
-  }catch{}
-  return "";
-}
 function allTokensPresent(haystack:string,needles:string[]){const hs=new Set(norm(haystack).split(/\s+/).filter(Boolean));return needles.length>0&&needles.every(t=>hs.has(t))}
 function reversedQuery(query:string){return query.trim().split(/\s+/).reverse().join(" ")}
 function identityInText(text:string,query:string){
@@ -259,7 +237,7 @@ async function runScholarQueries(original:string){
   return batches.flat();
 }
 
-async function runQueries(original:string,queries:string[],deep=true){
+async function runQueries(original:string,queries:string[],deep=true,bingQueries:string[]=[],quick=false){
   const jobs:Array<{query:string;page:number}>=[];
   for(let i=0;i<queries.length;i++){
     const pages=deep?pagesForQuery(queries[i],i):[1];
@@ -277,7 +255,7 @@ async function runQueries(original:string,queries:string[],deep=true){
     const group=jobs.slice(i,i+SERPER_BATCH_SIZE);
     const settled=await Promise.all(group.map(async job=>{
       try{
-        const results=await connector.searchPage(job.query,job.page);
+        const results=await (quick?connector.searchQuickPage(job.query):bingQueries.includes(job.query)?connector.searchBingPage(job.query,job.page):connector.searchPage(job.query,job.page));
         return results.map(result=>{
           const scored=scoreResult(original,result);
           const combined=result.title+" "+(result.snippet||"");
@@ -295,12 +273,12 @@ async function runQueries(original:string,queries:string[],deep=true){
       }
     }));
     batches.push(...settled);
-    if(i+SERPER_BATCH_SIZE<jobs.length){
+    if(!quick&&i+SERPER_BATCH_SIZE<jobs.length){
       await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
     }
   }
 
-  if(jobs.length){
+  if(!quick&&jobs.length){
     await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
   }
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
@@ -337,7 +315,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
               query:original,
               discoveryQuery:result.discoveryQuery,
               page:result.page,
-              connector:connector.id,
+              connector:result.provider.startsWith("Bing")?"serper-bing":connector.id,
               identityScore:Math.max(previousScore,result.score),
               classification:result.classification,
               reasons:result.reasons,
@@ -378,7 +356,7 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
     }
     const source=await db.source.create({data:{
       caseId,url:sanitizePostgresText(result.url),title:sanitizePostgresText(result.title),provider:sanitizePostgresText(result.provider),
-      metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),academicCandidatePlausibility:academicCandidatePlausibility(original,result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
+      metadata:sanitizePostgresJson({query:original,discoveryQuery:result.discoveryQuery,page:result.page,connector:result.provider.startsWith("Bing")?"serper-bing":connector.id,identityScore:result.score,classification:result.classification,reasons:result.reasons,category:categoryFor(result),academicCandidatePlausibility:academicCandidatePlausibility(original,result),publishedAt:pageMeta?.publishedAt??result.publishedAt,modifiedAt:pageMeta?.modifiedAt,imageUrl:pageMeta?.imageUrl,finalUrl:pageMeta?.finalUrl,fetchMode:pageMeta?.fetchMode,documentLike:isDocumentLike(result),institutionLike:isInstitutionLike(result),accountLike:isAccountLike(result),commerceLike:isCommerceLike(result)})
     }});
     await db.evidence.create({data:{
       caseId,sourceId:source.id,title:sanitizePostgresText(result.title),content:sanitizePostgresText(result.snippet||"Public search result"),
@@ -455,6 +433,36 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 }
 
 export async function collectPublicSources(caseId:string,query:string,mode:"quick"|"deep"="deep"){
+  if(mode==="quick")return collectQuickSources(caseId,query);
+  return collectFullSources(caseId,query,mode);
+}
+
+// Return evidence-backed first results without waiting for document downloads,
+// reader retries, contact enrichment or recursive searches. Deep scan owns those.
+async function collectQuickSources(caseId:string,query:string){
+  const startedAt=Date.now();
+  const plan=buildSearchPlan(query);
+  const queries=plan.queries.slice(0,4);
+  const run=await runQueries(query,queries,false,[],true);
+  const saved=await preserve(caseId,query,run.results,false);
+  const curation=await curateSources(caseId,false);
+  const extraction=await extractEvidenceEntities(caseId);
+  const providerStatus=run.failedCalls===run.calls?"unavailable":run.failedCalls?"degraded":"healthy";
+  await db.event.create({data:{
+    caseId,title:providerStatus==="unavailable"?"Public-footprint discovery unavailable":"Quick public-footprint discovery",
+    description:`Quick scan searched core identity and profiles; retained ${saved.added} new sources. Document and contact enrichment run in the deep scan.`,
+    occurredAt:new Date(),
+    metadata:{algorithmVersion:DISCOVERY_VERSION,mode:"quick",query,inputKind:plan.kind,providerStatus,
+      searchProvider:"Google / Serper",initialQueries:queries,serperCalls:run.calls,failedSerperCalls:run.failedCalls,
+      added:saved.added,noise:saved.noise,curation,finalExtraction:extraction,durationMs:Date.now()-startedAt,
+      enrichmentDeferred:true}
+  }});
+  return {mode:"quick" as const,providerStatus,searchProvider:"Google / Serper",added:saved.added,
+    skipped:saved.skipped,noise:saved.noise,results:saved.unique.filter(r=>r.classification!=="NOISE"),
+    queries,serperCalls:run.calls,failedSerperCalls:run.failedCalls,curation};
+}
+
+async function collectFullSources(caseId:string,query:string,mode:"quick"|"deep"){
   const badPivotSources=await db.source.findMany({where:{caseId},select:{id:true,metadata:true}});
   const badPivotIds=badPivotSources.filter(s=>reservedPlatformArtifact(s.metadata)).map(s=>s.id);
   if(badPivotIds.length){
@@ -485,15 +493,15 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   // contact searches cannot weaken the root identity gate.
   const contactPlan=plan.kind==="PERSON"
     ?await buildContactEnrichmentPlan(caseId,query,mode==="quick"?6:12)
-    :{queries:[] as string[],sourceIds:[] as string[],usernames:[] as string[],sourceHosts:[] as string[]};
+    :{queries:[] as string[],indexQueries:[] as string[],sourceIds:[] as string[],usernames:[] as string[],sourceHosts:[] as string[]};
   const contactQueries=contactPlan.queries.filter(q=>!initialQueries.includes(q));
   const contactRun=contactQueries.length
-    ?await runQueries(query,contactQueries,false)
+    ?await runQueries(query,contactQueries,false,contactPlan.indexQueries)
     :{results:[] as Ranked[],calls:0,failedCalls:0,jobs:[] as Array<{query:string;page:number}>};
   const contact=await preserve(caseId,query,contactRun.results,false);
   const contactEnrichmentIds=[...new Set([...contactPlan.sourceIds,...contact.sourceIds])];
   const contactEnrichment=contactEnrichmentIds.length
-    ?await enrichPublicSources(caseId,contactEnrichmentIds,mode==="quick"?6:12)
+    ?await enrichPublicSources(caseId,contactEnrichmentIds,mode==="quick"?6:12,true)
     :{attempted:0,fetched:0,failed:0};
   const contactExtraction=contactEnrichmentIds.length||contact.sourceIds.length
     ?await extractEvidenceEntities(caseId)
@@ -565,6 +573,7 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
   const serperCalls=firstRun.calls+academicRun.calls+contactRun.calls+platformRun1.calls+platformRun2.calls+secondCalls;
   const failedSerperCalls=(firstRun.failedCalls??0)+(academicRun.failedCalls??0)+(contactRun.failedCalls??0)+(platformRun1.failedCalls??0)+(platformRun2.failedCalls??0);
   const curation=await curateSources(caseId,mode==="deep");
+  const finalExtraction=await extractEvidenceEntities(caseId);
   const academicIntelligence=plan.kind==="PERSON"?await extractAcademicIntelligence(caseId,query):{records:[]};
   const providerStatus=serperCalls>0&&failedSerperCalls>=serperCalls
     ?"unavailable"
@@ -580,8 +589,8 @@ export async function collectPublicSources(caseId:string,query:string,mode:"quic
     caseId,title:eventTitle,
     description,
     occurredAt:new Date(),
-    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,providerStatus,searchProvider:"Google / Serper",initialQueries,academicQueries,contactQueries,contactPlan:{usernames:contactPlan.usernames,sourceHosts:contactPlan.sourceHosts,sourceIds:contactPlan.sourceIds},pivotQueries,usernameSeeds,newUsernameSeeds,contactCalls:contactRun.calls,contactFailedCalls:contactRun.failedCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,removedReservedPivotArtifacts:badPivotIds.length,firstEnrichment,contactEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,contactExtraction,platformExtraction1,platformExtraction2,secondExtraction,curation,academicIntelligence}
+    metadata:{algorithmVersion:DISCOVERY_VERSION,mode,query,inputKind:plan.kind,providerStatus,searchProvider:contactPlan.indexQueries.length?"Google + Bing / Serper":"Google / Serper",initialQueries,academicQueries,contactQueries,contactIndexQueries:contactPlan.indexQueries,contactPlan:{usernames:contactPlan.usernames,sourceHosts:contactPlan.sourceHosts,sourceIds:contactPlan.sourceIds},pivotQueries,usernameSeeds,newUsernameSeeds,contactCalls:contactRun.calls,contactFailedCalls:contactRun.failedCalls,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,platformRounds:[{round:1,usernames:usernameSeeds,queries:platformRun1.queries},{round:2,usernames:newUsernameSeeds,queries:platformRun2.queries}],serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicFailedCalls:academicRun.failedCalls,academicDeepValidated:academic.deepValidated,academicDeepRejected:academic.deepRejected,academicCandidatesRetained:academic.retainedCandidates,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,added,noise,skipped,deepValidated,deepRejected,removedStale:staleIds.length,removedReservedPivotArtifacts:badPivotIds.length,firstEnrichment,contactEnrichment,platformEnrichment1,platformEnrichment2,secondEnrichment,firstExtraction,contactExtraction,platformExtraction1,platformExtraction2,secondExtraction,finalExtraction,curation,academicIntelligence}
   }});
 
-  return {mode,providerStatus,searchProvider:"Google / Serper",results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...contactQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicCandidatesRetained:academic.retainedCandidates,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,contact:contactEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,contact:contactExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
+  return {mode,providerStatus,searchProvider:contactPlan.indexQueries.length?"Google + Bing / Serper":"Google / Serper",results:uniqueResults.filter(r=>r.classification!=="NOISE"),added,skipped,queries:[...initialQueries,...academicQueries,...contactQueries,...pivotQueries],noise,serperCalls,failedSerperCalls,academicCalls:academicRun.calls,academicCandidatesRetained:academic.retainedCandidates,platformCalls:platformRun1.calls+platformRun2.calls,platformFailedCalls:platformRun1.failedCalls+platformRun2.failedCalls,usernameSeeds,newUsernameSeeds,scholarResultCount:scholarResults.length,independentResultCount:independentResults.length,deepValidated,deepRejected,removedStale:staleIds.length,curation,academicIntelligence,enrichment:{first:firstEnrichment,contact:contactEnrichment,platformRound1:platformEnrichment1,platformRound2:platformEnrichment2,second:secondEnrichment},extraction:{first:firstExtraction,contact:contactExtraction,platformRound1:platformExtraction1,platformRound2:platformExtraction2,second:secondExtraction}};
 }
