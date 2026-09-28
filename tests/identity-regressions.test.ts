@@ -146,5 +146,7 @@ it.each([6,12])("reserves broad contact queries within a %i-query budget", async
   expect(plan.queries.some(q=>q.includes('"exampleone"'))).toBe(true);
   expect(plan.usernames).not.toContain("hihonor.com");
   expect(plan.sourceIds).toEqual(["li","zi"]);
+  expect(plan.indexQueries).toContain('"Jamie Example" gmail');
+  expect(plan.indexQueries.every(q=>plan.queries.includes(q))).toBe(true);
   if(limit===12)expect(plan.queries).toContain('"Jamie Example" "examplethree" email');
 });

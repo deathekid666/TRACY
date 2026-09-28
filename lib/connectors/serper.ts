@@ -40,7 +40,11 @@ export class SerperWebConnector implements PublicConnector{
     return this.searchEndpoint("/scholar",query,page,20,"Google Scholar / Serper");
   }
 
-  private async searchEndpoint(endpoint:string,query:string,page:number,num:number,provider:string):Promise<CollectedResult[]>{
+  async searchBingPage(query:string,page=1):Promise<CollectedResult[]>{
+    return this.searchEndpoint("/search",query,page,20,"Bing / Serper","https://bing.serper.dev");
+  }
+
+  private async searchEndpoint(endpoint:string,query:string,page:number,num:number,provider:string,baseUrl="https://google.serper.dev"):Promise<CollectedResult[]>{
     const apiKey=process.env.SERPER_API_KEY;
     if(!apiKey)throw new Error("SERPER_API_KEY_NOT_CONFIGURED");
 
@@ -49,10 +53,10 @@ export class SerperWebConnector implements PublicConnector{
 
     for(const q of attempts){
       for(let retry=0;retry<4;retry++){
-        const response=await fetch("https://google.serper.dev"+endpoint,{
+        const response=await fetch(baseUrl+endpoint,{
           method:"POST",
           headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
-          body:JSON.stringify({q,gl:"ma",hl:"fr",num,page}),
+          body:JSON.stringify(baseUrl==="https://google.serper.dev"?{q,gl:"ma",hl:"fr",num,page}:{q,num,page}),
           cache:"no-store",
         });
 

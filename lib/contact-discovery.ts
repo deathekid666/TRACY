@@ -20,6 +20,7 @@ function isContactSurface(host:string){
 
 export type ContactEnrichmentPlan={
   queries:string[];
+  indexQueries:string[];
   sourceIds:string[];
   usernames:string[];
   sourceHosts:string[];
@@ -86,6 +87,7 @@ export async function buildContactEnrichmentPlan(caseId:string,personName:string
 
   return {
     queries:unique(queries).slice(0,Math.max(0,maxQueries)),
+    indexQueries:unique(queries).slice(0,Math.max(0,maxQueries)).filter(q=>nameQueries.includes(q)),
     sourceIds,
     usernames,
     sourceHosts
