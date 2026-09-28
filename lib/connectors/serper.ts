@@ -36,6 +36,10 @@ export class SerperWebConnector implements PublicConnector{
     return this.searchEndpoint("/search",query,page,30,"Google / Serper");
   }
 
+  async searchQuickPage(query:string):Promise<CollectedResult[]>{
+    return this.searchEndpoint("/search",query,1,10,"Google / Serper","https://google.serper.dev",true);
+  }
+
   async searchScholar(query:string,page=1):Promise<CollectedResult[]>{
     return this.searchEndpoint("/scholar",query,page,20,"Google Scholar / Serper");
   }
@@ -44,20 +48,21 @@ export class SerperWebConnector implements PublicConnector{
     return this.searchEndpoint("/search",query,page,20,"Bing / Serper","https://bing.serper.dev");
   }
 
-  private async searchEndpoint(endpoint:string,query:string,page:number,num:number,provider:string,baseUrl="https://google.serper.dev"):Promise<CollectedResult[]>{
+  private async searchEndpoint(endpoint:string,query:string,page:number,num:number,provider:string,baseUrl="https://google.serper.dev",quick=false):Promise<CollectedResult[]>{
     const apiKey=process.env.SERPER_API_KEY;
     if(!apiKey)throw new Error("SERPER_API_KEY_NOT_CONFIGURED");
 
     const attempts=[query,simpleQuery(query),fallbackQuery(query)].filter((v,i,a)=>v&&a.indexOf(v)===i);
     let lastStatus=0,lastDetail="";
 
-    for(const q of attempts){
-      for(let retry=0;retry<4;retry++){
+    for(const q of quick?attempts.slice(0,1):attempts){
+      for(let retry=0;retry<(quick?1:4);retry++){
         const response=await fetch(baseUrl+endpoint,{
           method:"POST",
           headers:{"X-API-KEY":apiKey,"Content-Type":"application/json"},
           body:JSON.stringify(baseUrl==="https://google.serper.dev"?{q,gl:"ma",hl:"fr",num,page}:{q,num,page}),
           cache:"no-store",
+          signal:AbortSignal.timeout(quick?8000:20000),
         });
 
         if(response.ok){
@@ -75,7 +80,7 @@ export class SerperWebConnector implements PublicConnector{
         lastStatus=response.status;
         lastDetail=(await response.text()).slice(0,200);
 
-        if(response.status===429){
+        if(response.status===429&&!quick){
           const retryAfter=response.headers.get("retry-after");
           const waitFromHeader=retryAfter?Number(retryAfter)*1000:0;
           const backoff=Math.max(waitFromHeader,1100*(retry+1));

@@ -3,6 +3,17 @@ import { SerperWebConnector } from "@/lib/connectors/serper";
 
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs()});
 
+it("bounds quick search to eight seconds and does not retry rate limiting",async()=>{
+  vi.stubEnv("SERPER_API_KEY","unit-test-key");
+  const timeout=vi.spyOn(AbortSignal,"timeout");
+  const fetchMock=vi.fn().mockResolvedValue(new Response("Rate limited",{status:429}));
+  vi.stubGlobal("fetch",fetchMock);
+  await expect(new SerperWebConnector().searchQuickPage('"Jamie Example"')).rejects.toThrow("SERPER_HTTP_429");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(timeout).toHaveBeenCalledWith(8000);
+  timeout.mockRestore();
+});
+
 it("preserves the public index's literal snippet and provider attribution",async()=>{
   vi.stubEnv("SERPER_API_KEY","unit-test-key");
   const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({

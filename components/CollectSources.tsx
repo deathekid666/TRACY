@@ -40,8 +40,8 @@ export function CollectSources({ caseId, defaultQuery, autoEnabled=false, versio
         </button>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
-        <span><b className="text-slate-300">Quick</b> — core identity, major profiles, first documents.</span>
-        <span><b className="text-slate-300">Deep</b> — archives, documents, handle pivots, forums and independent indexes.</span>
+        <span><b className="text-slate-300">Quick</b> — first identity and profile results.</span>
+        <span><b className="text-slate-300">Deep</b> — contacts, documents, archives and connected accounts.</span>
       </div>
       {message&&<div role={error?"alert":"status"} aria-live="polite" className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2 text-xs text-slate-400">{message}</div>}
     </form>

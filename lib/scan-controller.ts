@@ -34,7 +34,7 @@ export function createScanController(caseId: string) {
         if (automaticKey) sessionValue(automaticKey, step);
         publish({
           busy: step,
-          message: step === "quick" ? "Quick scan running… core identity, contact and academic records first."
+          message: step === "quick" ? "Finding first results… identity and public profiles."
             : automaticKey ? "Quick results are ready. Deep scan is continuing automatically…"
             : "Running deep scan. You can keep this case open while it works…",
         });

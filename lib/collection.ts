@@ -237,7 +237,7 @@ async function runScholarQueries(original:string){
   return batches.flat();
 }
 
-async function runQueries(original:string,queries:string[],deep=true,bingQueries:string[]=[]){
+async function runQueries(original:string,queries:string[],deep=true,bingQueries:string[]=[],quick=false){
   const jobs:Array<{query:string;page:number}>=[];
   for(let i=0;i<queries.length;i++){
     const pages=deep?pagesForQuery(queries[i],i):[1];
@@ -255,7 +255,7 @@ async function runQueries(original:string,queries:string[],deep=true,bingQueries
     const group=jobs.slice(i,i+SERPER_BATCH_SIZE);
     const settled=await Promise.all(group.map(async job=>{
       try{
-        const results=await (bingQueries.includes(job.query)?connector.searchBingPage(job.query,job.page):connector.searchPage(job.query,job.page));
+        const results=await (quick?connector.searchQuickPage(job.query):bingQueries.includes(job.query)?connector.searchBingPage(job.query,job.page):connector.searchPage(job.query,job.page));
         return results.map(result=>{
           const scored=scoreResult(original,result);
           const combined=result.title+" "+(result.snippet||"");
@@ -273,12 +273,12 @@ async function runQueries(original:string,queries:string[],deep=true,bingQueries
       }
     }));
     batches.push(...settled);
-    if(i+SERPER_BATCH_SIZE<jobs.length){
+    if(!quick&&i+SERPER_BATCH_SIZE<jobs.length){
       await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
     }
   }
 
-  if(jobs.length){
+  if(!quick&&jobs.length){
     await new Promise(resolve=>setTimeout(resolve,SERPER_BATCH_DELAY_MS));
   }
   return {results:batches.flat(),calls:jobs.length,failedCalls,jobs};
@@ -433,6 +433,36 @@ async function preserve(caseId:string,original:string,results:Ranked[],deepValid
 }
 
 export async function collectPublicSources(caseId:string,query:string,mode:"quick"|"deep"="deep"){
+  if(mode==="quick")return collectQuickSources(caseId,query);
+  return collectFullSources(caseId,query,mode);
+}
+
+// Return evidence-backed first results without waiting for document downloads,
+// reader retries, contact enrichment or recursive searches. Deep scan owns those.
+async function collectQuickSources(caseId:string,query:string){
+  const startedAt=Date.now();
+  const plan=buildSearchPlan(query);
+  const queries=plan.queries.slice(0,4);
+  const run=await runQueries(query,queries,false,[],true);
+  const saved=await preserve(caseId,query,run.results,false);
+  const curation=await curateSources(caseId,false);
+  const extraction=await extractEvidenceEntities(caseId);
+  const providerStatus=run.failedCalls===run.calls?"unavailable":run.failedCalls?"degraded":"healthy";
+  await db.event.create({data:{
+    caseId,title:providerStatus==="unavailable"?"Public-footprint discovery unavailable":"Quick public-footprint discovery",
+    description:`Quick scan searched core identity and profiles; retained ${saved.added} new sources. Document and contact enrichment run in the deep scan.`,
+    occurredAt:new Date(),
+    metadata:{algorithmVersion:DISCOVERY_VERSION,mode:"quick",query,inputKind:plan.kind,providerStatus,
+      searchProvider:"Google / Serper",initialQueries:queries,serperCalls:run.calls,failedSerperCalls:run.failedCalls,
+      added:saved.added,noise:saved.noise,curation,finalExtraction:extraction,durationMs:Date.now()-startedAt,
+      enrichmentDeferred:true}
+  }});
+  return {mode:"quick" as const,providerStatus,searchProvider:"Google / Serper",added:saved.added,
+    skipped:saved.skipped,noise:saved.noise,results:saved.unique.filter(r=>r.classification!=="NOISE"),
+    queries,serperCalls:run.calls,failedSerperCalls:run.failedCalls,curation};
+}
+
+async function collectFullSources(caseId:string,query:string,mode:"quick"|"deep"){
   const badPivotSources=await db.source.findMany({where:{caseId},select:{id:true,metadata:true}});
   const badPivotIds=badPivotSources.filter(s=>reservedPlatformArtifact(s.metadata)).map(s=>s.id);
   if(badPivotIds.length){
